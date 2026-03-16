@@ -260,7 +260,7 @@ Data visualization is a built-in NocoBase plugin — no additional installation 
 
 ## What's Next
 
-At this point, our ticket system is quite feature-complete: data modeling, page building, form entry, access control, automated workflows, and a data dashboard — we've got it all. We're planning an advanced tutorial on **building with AI Agents locally** — stay tuned.
+At this point, our ticket system is quite feature-complete: data modeling, page building, form entry, access control, automated workflows, and a data dashboard — we've got it all. We're planning an **AI Agent version of this tutorial** — using AI Agents to build the system locally and automatically. Stay tuned.
 
 ## Related Resources
 
