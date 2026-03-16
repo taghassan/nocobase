@@ -258,9 +258,9 @@ We also learned an important technique — **Popup Reuse**: save a popup from on
 
 Data visualization is a built-in NocoBase plugin — no additional installation needed. Configuring it is just as simple as building a page: pick your data, choose a chart type, map the fields — three steps and you're done.
 
-## Next Chapter Preview
+## What's Next
 
-At this point, our ticket system is quite feature-complete: data modeling, page building, form entry, access control, automated workflows, and a data dashboard — we've got it all. In the final chapter, we'll do some **finishing touches** and talk about **deploying to production**.
+At this point, our ticket system is quite feature-complete: data modeling, page building, form entry, access control, automated workflows, and a data dashboard — we've got it all. We're planning an advanced tutorial on **building with AI Agents locally** — stay tuned.
 
 ## Related Resources
 
