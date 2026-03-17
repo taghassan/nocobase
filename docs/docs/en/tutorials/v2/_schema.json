@@ -5,8 +5,17 @@
   "datePublished": "2026-03-11",
   "dateModified": "2026-03-16",
   "faq": [
-    { "q": "What is NocoBase best suited for?", "a": "Internal business tools, data management systems, approval workflows, CRM, ERP, and other scenarios requiring flexible customization with self-hosted deployment." },
-    { "q": "What prerequisites do I need?", "a": "No programming required, but some basic computer knowledge is recommended. The tutorial explains concepts step by step." },
-    { "q": "Are there limitations in the free version?", "a": "Core features are fully free and open-source. The commercial edition offers additional premium plugins and technical support." }
+    {
+      "q": "What is NocoBase best suited for?",
+      "a": "Internal business tools, data management systems, approval workflows, CRM, ERP, and other scenarios requiring flexible customization with self-hosted deployment."
+    },
+    {
+      "q": "What prerequisites do I need?",
+      "a": "No programming required, but some basic computer knowledge is recommended. The tutorial explains concepts step by step."
+    },
+    {
+      "q": "Are there limitations in the free version?",
+      "a": "Core features are fully free and open-source. The commercial edition offers additional premium plugins and technical support."
+    }
   ]
 }
