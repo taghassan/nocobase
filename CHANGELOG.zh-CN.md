@@ -5,6 +5,12 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 并且本项目遵循 [语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [v2.0.22](https://github.com/nocobase/nocobase/compare/v2.0.21...v2.0.22) - 2026-03-20
+
+### 🐛 修复
+
+- **[迁移管理]** 修复上传迁移时，目标环境不存在新建表而抛错导致中断迁移的问题 by @Andrew1989Y
+
 ## [v2.0.21](https://github.com/nocobase/nocobase/compare/v2.0.20...v2.0.21) - 2026-03-20
 
 ### 🚀 优化

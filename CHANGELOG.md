@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.0.22](https://github.com/nocobase/nocobase/compare/v2.0.21...v2.0.22) - 2026-03-20
+
+### 🐛 Bug Fixes
+
+- **[Migration manager]** Fixed the issue where the migration is interrupted due to an error caused by the target environment not having the new table created during the upload migration process. by @Andrew1989Y
+
 ## [v2.0.21](https://github.com/nocobase/nocobase/compare/v2.0.20...v2.0.21) - 2026-03-20
 
 ### 🚀 Improvements
