@@ -162,17 +162,45 @@ jobs:
           yarn config set registry https://registry.npmjs.org/
           yarn install
           yarn build packages/pro-plugins
+      - name: Resolve pro plugin scopes
+        id: pro-plugin-scopes
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_NAMES=$(
+            find packages/pro-plugins -name package.json \
+              -not -path '*/node_modules/*' \
+              -not -path 'packages/pro-plugins/package.json' \
+              -exec jq -r 'select(.private != true) | .name' {} + \
+              | sort
+          )
+          SCOPE_ARGS=$(printf '%s\n' "$PACKAGE_NAMES" | sed '/^$/d; s/^/--scope /' | xargs)
+
+          if [[ -n "$SCOPE_ARGS" ]]; then
+            echo "Packages to publish:"
+            printf '%s\n' "$PACKAGE_NAMES"
+            echo "count=1" >> "$GITHUB_OUTPUT"
+            echo "args=$SCOPE_ARGS" >> "$GITHUB_OUTPUT"
+          else
+            echo "No pro plugin packages to publish."
+            echo "count=0" >> "$GITHUB_OUTPUT"
+            echo "args=" >> "$GITHUB_OUTPUT"
+          fi
       - name: publish pkg.nocobase.com
+        if: ${{ steps.pro-plugin-scopes.outputs.count != '0' }}
+        shell: bash
         run: |
           git reset --hard
           npm config set //pkg.nocobase.com/:_authToken=${{ env.PKG_NOCOBASE_TOKEN }}
-          yarn release:force --no-verify-access --no-git-reset --registry https://pkg.nocobase.com $DIST_TAG_ARG
+          yarn release:force --no-verify-access --no-git-reset --registry https://pkg.nocobase.com $DIST_TAG_ARG ${{ steps.pro-plugin-scopes.outputs.args }}
       - name: publish pkg-src.nocobase.com
+        if: ${{ steps.pro-plugin-scopes.outputs.count != '0' }}
+        shell: bash
         run: |
           git reset --hard
           bash generate-npmignore.sh ignore-src
           npm config set //pkg-src.nocobase.com/:_authToken=${{ env.PKG_SRC_NOCOBASE_TOKEN }}
-          yarn release:force --no-verify-access --no-git-reset --registry https://pkg-src.nocobase.com $DIST_TAG_ARG
+          yarn release:force --no-verify-access --no-git-reset --registry https://pkg-src.nocobase.com $DIST_TAG_ARG ${{ steps.pro-plugin-scopes.outputs.args }}
   push-docker:
     runs-on: ubuntu-latest
     needs:
