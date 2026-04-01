@@ -16,6 +16,16 @@
   },
   {
     "type": "file",
+    "name": "guide",
+    "label": "User Guide"
+  },
+  {
+    "type": "file",
+    "name": "guide-overview",
+    "label": "System Overview & Dashboards"
+  },
+  {
+    "type": "file",
     "name": "changelog",
     "label": "Changelog"
   },
