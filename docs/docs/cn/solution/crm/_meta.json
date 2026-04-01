@@ -15,14 +15,9 @@
     "label": "如何安装"
   },
   {
-    "type": "file",
+    "type": "dir",
     "name": "guide",
     "label": "操作指南"
-  },
-  {
-    "type": "file",
-    "name": "guide-overview",
-    "label": "系统介绍与仪表盘"
   },
   {
     "type": "file",

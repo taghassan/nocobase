@@ -24,7 +24,7 @@ The core business flow is **Lead → Customer/Contact → Opportunity → Quotat
 
 ## Prerequisites
 
-- CRM 2.0 installed and running (see [Installation](./installation))
+- CRM 2.0 installed and running (see [Installation](../installation))
 - Logged in with an admin account
 
 ## System Navigation
