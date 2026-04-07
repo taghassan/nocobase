@@ -58,7 +58,7 @@ jobs:
             local plugins="[]"
             until [ "$i" -ge 2 ]
             do
-              plugins=$(gh search repos "props.plugin-type:$query" --owner=nocobase --json name | jq -r 'map(.name) | tostring') && [[ "$plugins" != "[]" ]] && break
+              plugins=$(gh search repos "props.plugin-type:$query" --owner=nocobase --limit 1000 --json name | jq -r 'map(.name) | tostring') && [[ "$plugins" != "[]" ]] && break
               i=$((i+1))
               sleep 10
             done
