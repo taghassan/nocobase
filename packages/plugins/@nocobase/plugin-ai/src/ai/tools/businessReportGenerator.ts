@@ -12,7 +12,7 @@ import { z } from 'zod';
 // @ts-ignore
 import pkg from '../../../package.json';
 
-function coerceChartsInput(value: unknown) {
+function normalizeChartsInput(value: unknown) {
   if (typeof value !== 'string') {
     return value;
   }
@@ -56,7 +56,7 @@ export default defineTools({
           'Main report body in markdown. Use sections for findings, risks, and recommendations. To place a chart inline at a specific position, insert placeholders like {{chart:1}}, {{chart:2}}. Do not include any generated-at footer because the platform renders that automatically.',
         ),
       charts: z
-        .preprocess(coerceChartsInput, z.array(chartSchema).optional())
+        .union([z.array(chartSchema), z.string()])
         .optional()
         .describe(
           'Charts included in the report. Put full ECharts options here directly instead of generating charts in a separate step. If chart data is unavailable, omit this field instead of retrying the tool.',
@@ -65,11 +65,12 @@ export default defineTools({
     }),
   },
   invoke: async (_ctx, args) => {
+    const charts = normalizeChartsInput(args.charts);
     return {
       status: 'success',
       content: JSON.stringify({
         title: args.title,
-        chartCount: args.charts?.length ?? 0,
+        chartCount: Array.isArray(charts) ? charts.length : 0,
         fileName: args.fileName ?? null,
       }),
     };
