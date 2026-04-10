@@ -41,6 +41,7 @@ export default (app: Application) => {
           displayName: json.displayName || name,
           packageName: item.packageName,
           enabled: enabledPlugins.includes(item.packageName),
+          description: json.description,
         };
       }),
     );
