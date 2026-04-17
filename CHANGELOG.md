@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.0.39](https://github.com/nocobase/nocobase/compare/v2.0.38...v2.0.39) - 2026-04-17
+
+### 🚀 Improvements
+
+- **[Departments]** Display the `parentId` foreign key field of department collection in the UI ([#9130](https://github.com/nocobase/nocobase/pull/9130)) by @2013xile
+
+### 🐛 Bug Fixes
+
+- **[data-source-manager]** Fixed file collection field sync removing `preview` field ([#9129](https://github.com/nocobase/nocobase/pull/9129)) by @2013xile
+
+- **[client]** Fixed an issue where the association field component was incorrect in the field value settings. ([#9063](https://github.com/nocobase/nocobase/pull/9063)) by @gchust
+
 ## [v2.0.38](https://github.com/nocobase/nocobase/compare/v2.0.37...v2.0.38) - 2026-04-16
 
 ### 🎉 New Features
