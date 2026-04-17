@@ -5,6 +5,18 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/),
 并且本项目遵循 [语义化版本](https://semver.org/spec/v2.0.0.html)。
 
+## [v2.0.39](https://github.com/nocobase/nocobase/compare/v2.0.38...v2.0.39) - 2026-04-17
+
+### 🚀 优化
+
+- **[部门]** 在界面中显示部门表的 `parentId` 外键字段 ([#9130](https://github.com/nocobase/nocobase/pull/9130)) by @2013xile
+
+### 🐛 修复
+
+- **[data-source-manager]** 修复文件表字段同步时误删 `preview` 字段的问题 ([#9129](https://github.com/nocobase/nocobase/pull/9129)) by @2013xile
+
+- **[client]** 修复字段值配置里关系字段组件不正确的问题。 ([#9063](https://github.com/nocobase/nocobase/pull/9063)) by @gchust
+
 ## [v2.0.38](https://github.com/nocobase/nocobase/compare/v2.0.37...v2.0.38) - 2026-04-16
 
 ### 🎉 新特性
