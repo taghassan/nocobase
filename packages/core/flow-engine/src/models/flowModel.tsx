@@ -862,7 +862,7 @@ export class FlowModel<Structure extends DefaultStructure = DefaultStructure> {
   }, 100);
 
   private resetAutoRunState(): void {
-    this._rerunLastAutoRun.cancel();
+    this._rerunLastAutoRun?.cancel?.();
     this._lastAutoRunParams = null;
   }
 
