@@ -129,7 +129,23 @@ test('nb init continues from the browser UI result and runs env:add for an exist
 
   await Init.prototype.run.call(command);
 
+  expect(mocks.promptIntro).toHaveBeenCalledWith('Set Up Your NocoBase AI Workspace');
   expect(mocks.runPromptCatalogWebUI.mock.calls.length).toBe(1);
+  expect(mocks.promptInfo).toHaveBeenCalledWith(
+    'A local setup form will open in your browser. That form needs a person to fill it in. If you are using an AI agent, do not stop this process while the CLI waits for the submission.',
+  );
+  const webUiOptions = mocks.runPromptCatalogWebUI.mock.calls[0]?.[0];
+  expect(typeof webUiOptions?.onServerStart).toBe('function');
+  webUiOptions?.onServerStart?.({
+    host: '127.0.0.1',
+    port: 60128,
+    url: 'http://127.0.0.1:60128/',
+  });
+  expect(mocks.promptStep).toHaveBeenCalledWith('Local setup form is ready.');
+  expect(mocks.promptInfo).toHaveBeenCalledWith(
+    'If your browser does not open automatically, copy the URL below into your browser to continue. Keep this terminal session running while the CLI waits for the submission.',
+  );
+  expect(log).toHaveBeenCalledWith('URL: http://127.0.0.1:60128/');
   expect(mocks.runPromptCatalog.mock.calls.length).toBe(1);
   expect(mocks.runPromptCatalog.mock.calls[0]?.[1]?.values).toEqual({
     appName: 'staging',
@@ -158,6 +174,86 @@ test('nb init continues from the browser UI result and runs env:add for an exist
       ],
     ],
   ]);
+});
+
+test('nb init shows a concise fallback message when the setup browser cannot be opened automatically', async () => {
+  const { default: Init } = await import('../commands/init.js');
+
+  mocks.runPromptCatalogWebUI.mockResolvedValue({
+    appName: 'staging',
+    hasNocobase: 'yes',
+    installSkills: false,
+    apiBaseUrl: 'http://localhost:13000/api',
+    authType: 'token',
+    accessToken: 'secret-token',
+  });
+  mocks.runPromptCatalog.mockImplementation(async (_catalog, options) => options.values ?? {});
+
+  const command = Object.assign(Object.create(Init.prototype), {
+    parse: vi.fn(async () => ({
+      flags: {
+        ui: true,
+        yes: false,
+        'ui-host': '127.0.0.1',
+        'ui-port': 0,
+      },
+    })),
+    config: { runCommand: vi.fn(async () => undefined) },
+    log: vi.fn(),
+    error: vi.fn((message: string) => {
+      throw new Error(`unexpected error: ${message}`);
+    }),
+    exit: vi.fn((code?: number) => {
+      throw new Error(`unexpected exit: ${code ?? 'unknown'}`);
+    }),
+  });
+
+  await Init.prototype.run.call(command);
+
+  const webUiOptions = mocks.runPromptCatalogWebUI.mock.calls[0]?.[0];
+  expect(typeof webUiOptions?.onOpenBrowserError).toBe('function');
+  webUiOptions?.onOpenBrowserError?.('http://127.0.0.1:60128/', new Error('open failed'));
+  expect(mocks.promptWarn).toHaveBeenCalledWith(
+    'We could not open your browser automatically. Copy the URL above into your browser to continue setup, and keep this terminal session running. If you are using an AI agent, do not stop the current process.',
+  );
+});
+
+test('nb init localizes the browser UI intro title', async () => {
+  const { default: Init } = await import('../commands/init.js');
+
+  mocks.runPromptCatalogWebUI.mockResolvedValue({
+    appName: 'staging',
+    hasNocobase: 'yes',
+    installSkills: false,
+    apiBaseUrl: 'http://localhost:13000/api',
+    authType: 'token',
+    accessToken: 'secret-token',
+  });
+  mocks.runPromptCatalog.mockImplementation(async (_catalog, options) => options.values ?? {});
+
+  const command = Object.assign(Object.create(Init.prototype), {
+    parse: vi.fn(async () => ({
+      flags: {
+        ui: true,
+        yes: false,
+        locale: 'zh-CN',
+        'ui-host': '127.0.0.1',
+        'ui-port': 0,
+      },
+    })),
+    config: { runCommand: vi.fn(async () => undefined) },
+    log: vi.fn(),
+    error: vi.fn((message: string) => {
+      throw new Error(`unexpected error: ${message}`);
+    }),
+    exit: vi.fn((code?: number) => {
+      throw new Error(`unexpected exit: ${code ?? 'unknown'}`);
+    }),
+  });
+
+  await Init.prototype.run.call(command);
+
+  expect(mocks.promptIntro).toHaveBeenCalledWith('初始化你的 NocoBase AI 工作区');
 });
 
 test('nb init forwards download options to nb install for a new app flow', async () => {
@@ -483,7 +579,7 @@ test('nb init logs duplicate env validation errors with Clack in --yes mode', as
   const { default: Init } = await import('../commands/init.js');
   mocks.runPromptCatalog.mockImplementation(async (_catalog, options) => {
     options.hooks?.onMissingNonInteractive?.(
-      'Env "local3" already exists in this workspace. Choose another app name.',
+      'Env "local3" already exists in this workspace. Choose another env name.',
     );
     return {};
   });
@@ -537,7 +633,7 @@ test('nb init explains that --env is required when --yes skips prompts', async (
   expect(mocks.promptWarn.mock.calls.length).toBe(0);
   expect(runCommand.mock.calls.length).toBe(0);
   expect(mocks.promptError.mock.calls.length).toBe(1);
-  expect(String(mocks.promptError.mock.calls[0]?.[0] ?? '')).toMatch(/App name is required when prompts are skipped\..*nb init --yes --env <envName>/s);
+  expect(String(mocks.promptError.mock.calls[0]?.[0] ?? '')).toMatch(/Env name is required when prompts are skipped\..*nb init --yes --env <envName>/s);
 });
 
 test('nb init --locale overrides the environment locale for prompt-side messages', async () => {
@@ -565,7 +661,7 @@ test('nb init --locale overrides the environment locale for prompt-side messages
   await expect((() => Init.prototype.run.call(command))()).rejects.toThrow(/exit: 1/);
   expect(mocks.promptError.mock.calls.length).toBe(1);
   expect(String(mocks.promptError.mock.calls[0]?.[0] ?? '')).toMatch(
-    /App name is required when prompts are skipped\..*nb init --yes --env <envName>/s,
+    /Env name is required when prompts are skipped\..*nb init --yes --env <envName>/s,
   );
 });
 
@@ -723,6 +819,47 @@ test('nb init treats the --yes download source as docker when resolving dynamic 
 
     expect(buildDbPromptInitialValues.mock.calls[0]?.[0].downloadResults.source).toBe('docker');
   } finally {
+    buildDbPromptInitialValues.mockRestore();
+  }
+});
+
+test('nb init resolves dynamic port defaults without showing fallback warnings', async () => {
+  const { default: Init } = await import('../commands/init.js');
+  const { default: Install } = await import('../commands/install.js');
+  const buildAppPromptInitialValues = vi
+    .spyOn(Install, 'buildAppPromptInitialValues')
+    .mockResolvedValue({ appPort: '61522' });
+  const buildDbPromptInitialValues = vi
+    .spyOn(Install, 'buildDbPromptInitialValues')
+    .mockResolvedValue({ dbPort: '61523' });
+
+  try {
+    const buildDynamicInitialValuesForInstall = (
+      Init as unknown as {
+        buildDynamicInitialValuesForInstall: (
+          flags: { yes?: boolean; 'app-port'?: string; 'db-port'?: string },
+          presetValues: Record<string, string | number | boolean>,
+        ) => Promise<Record<string, string | number | boolean>>;
+      }
+    ).buildDynamicInitialValuesForInstall;
+
+    const initialValues = await buildDynamicInitialValuesForInstall(
+      { yes: false },
+      {
+        appName: 'app1',
+        fetchSource: true,
+        source: 'npm',
+        builtinDb: true,
+        dbDialect: 'postgres',
+      },
+    );
+
+    expect(initialValues.appPort).toBe('61522');
+    expect(initialValues.dbPort).toBe('61523');
+    expect(buildAppPromptInitialValues.mock.calls[0]?.[0].warnOnPortFallback).toBe(false);
+    expect(buildDbPromptInitialValues.mock.calls[0]?.[0].warnOnPortFallback).toBe(false);
+  } finally {
+    buildAppPromptInitialValues.mockRestore();
     buildDbPromptInitialValues.mockRestore();
   }
 });

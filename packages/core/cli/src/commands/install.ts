@@ -985,6 +985,7 @@ export default class Install extends Command {
   static async buildAppPromptInitialValues(params: {
     envName?: string;
     flags: Pick<InstallParsedFlags, 'app-port' | 'app-root-path' | 'storage-path'>;
+    warnOnPortFallback?: boolean;
   }): Promise<PromptInitialValues> {
     const initialValues: PromptInitialValues = {};
     const envName = params.envName ?? DEFAULT_INSTALL_ENV_NAME;
@@ -1002,7 +1003,7 @@ export default class Install extends Command {
         DEFAULT_INSTALL_APP_PORT,
         {
           label: 'Default app port',
-          warn: true,
+          warn: params.warnOnPortFallback ?? true,
         },
       );
     }
@@ -1021,6 +1022,7 @@ export default class Install extends Command {
     flags: Pick<InstallParsedFlags, 'db-port'>;
     downloadResults: Record<string, PromptValue>;
     dbPreset: PromptInitialValues;
+    warnOnPortFallback?: boolean;
   }): Promise<PromptInitialValues> {
     if (params.flags['db-port'] !== undefined) {
       return {};
@@ -1041,7 +1043,7 @@ export default class Install extends Command {
         defaultPort,
         {
           label: `Default ${dialect} port`,
-          warn: true,
+          warn: params.warnOnPortFallback ?? true,
         },
       ),
     };
