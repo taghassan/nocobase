@@ -8,7 +8,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { beforeEach, test, vi } from 'vitest';
+import { afterEach, beforeEach, test, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   runPromptCatalogWebUI: vi.fn(),
@@ -27,7 +27,18 @@ const mocks = vi.hoisted(() => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  process.env.NB_LOCALE = 'en-US';
   mocks.upsertEnv.mockResolvedValue(undefined);
+});
+
+const originalNbLocale = process.env.NB_LOCALE;
+
+afterEach(() => {
+  if (originalNbLocale === undefined) {
+    delete process.env.NB_LOCALE;
+    return;
+  }
+  process.env.NB_LOCALE = originalNbLocale;
 });
 
 vi.mock('../lib/prompt-web-ui.ts', () => ({
@@ -170,13 +181,14 @@ test('nb init forwards download options to nb install for a new app flow', async
     npmRegistry: 'https://registry.npmmirror.com',
     builtinDb: true,
     dbDialect: 'postgres',
+    builtinDbImage: 'registry.example.com/postgres:16',
     dbHost: '127.0.0.1',
     dbPort: '5432',
     dbDatabase: 'demoapp',
     dbUser: 'nocobase',
     dbPassword: 'secret',
     rootUsername: 'admin',
-    rootEmail: 'admin@example.com',
+    rootEmail: 'admin@nocobase.com',
     rootPassword: 'admin123',
     rootNickname: 'Admin',
   });
@@ -224,6 +236,7 @@ test('nb init forwards download options to nb install for a new app flow', async
       appPort: '13080',
       builtinDb: true,
       dbDialect: 'postgres',
+      builtinDbImage: 'registry.example.com/postgres:16',
       dbHost: '127.0.0.1',
       dbPort: '5432',
       dbDatabase: 'demoapp',
@@ -263,6 +276,8 @@ test('nb init forwards download options to nb install for a new app flow', async
         '--builtin-db',
         '--db-dialect',
         'postgres',
+        '--builtin-db-image',
+        'registry.example.com/postgres:16',
         '--db-host',
         '127.0.0.1',
         '--db-port',
@@ -276,7 +291,7 @@ test('nb init forwards download options to nb install for a new app flow', async
         '--root-username',
         'admin',
         '--root-email',
-        'admin@example.com',
+        'admin@nocobase.com',
         '--root-password',
         'admin123',
         '--root-nickname',
@@ -310,7 +325,7 @@ test('nb init saves env config before install starts so failures still leave the
     dbUser: 'nocobase',
     dbPassword: 'secret',
     rootUsername: 'admin',
-    rootEmail: 'admin@example.com',
+    rootEmail: 'admin@nocobase.com',
     rootPassword: 'admin123',
     rootNickname: 'Admin',
     ...(options.values ?? {}),
@@ -538,6 +553,39 @@ test('nb init explains that --env is required when --yes skips prompts', async (
   );
 });
 
+test('nb init --locale overrides the environment locale for prompt-side messages', async () => {
+  const { default: Init } = await import('../commands/init.js');
+  const runCommand = vi.fn(async () => undefined);
+  process.env.NB_LOCALE = 'zh-CN';
+
+  const command = Object.assign(Object.create(Init.prototype), {
+    parse: vi.fn(async () => ({
+      flags: {
+        yes: true,
+        ui: false,
+        locale: 'en-US',
+      },
+    })),
+    config: {
+      runCommand,
+    },
+    log: vi.fn(),
+    exit: (code?: number) => {
+      throw new Error(`exit: ${code ?? 'unknown'}`);
+    },
+  });
+
+  await assert.rejects(
+    () => Init.prototype.run.call(command),
+    /exit: 1/,
+  );
+  assert.equal(mocks.promptError.mock.calls.length, 1);
+  assert.match(
+    String(mocks.promptError.mock.calls[0]?.[0] ?? ''),
+    /App name is required when prompts are skipped\..*nb init --yes --env <envName>/s,
+  );
+});
+
 test('nb init --force allows reconfiguring an existing workspace env and warns before install', async () => {
   const { default: Init } = await import('../commands/init.js');
   mocks.getEnv.mockResolvedValue({
@@ -745,7 +793,7 @@ test('nb init preserves argument values that contain spaces when building instal
         dbUser: 'nocobase',
         dbPassword: 'nocobase',
         rootUsername: 'nocobase',
-        rootEmail: 'admin@example.com',
+        rootEmail: 'admin@nocobase.com',
         rootPassword: 'admin123',
         rootNickname: 'Super Admin',
       },

@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import net from 'node:net';
-import { afterEach, test, vi } from 'vitest';
+import { afterEach, beforeEach, test, vi } from 'vitest';
 
 vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>();
@@ -40,6 +40,20 @@ vi.mock('node:child_process', async (importOriginal) => {
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+const originalNbLocale = process.env.NB_LOCALE;
+
+beforeEach(() => {
+  process.env.NB_LOCALE = 'en-US';
+});
+
+afterEach(() => {
+  if (originalNbLocale === undefined) {
+    delete process.env.NB_LOCALE;
+    return;
+  }
+  process.env.NB_LOCALE = originalNbLocale;
 });
 
 function requestWithAgent(
@@ -148,6 +162,7 @@ test('runPromptCatalogWebUI resolves after submit even when the browser keeps a 
     const page = await requestWithAgent(uiUrl, { agent });
     assert.equal(page.statusCode, 200);
     assert.match(page.body, /Submit &amp; continue in terminal/);
+    assert.match(page.body, /Saved\. This tab will close automatically in 5 seconds\./);
 
     const submitUrl = new URL('/__pwc_ui_submit', uiUrl).toString();
     const submit = await requestWithAgent(submitUrl, {
@@ -345,6 +360,52 @@ test('reflow recomputes init app paths from the current app name', async () => {
   assert.equal(state.show.storagePath, true);
   assert.equal(state.values.appRootPath, './demoapp/source/');
   assert.equal(state.values.storagePath, './demoapp/storage/');
+});
+
+test('reflow recomputes the built-in database image from the current database dialect until the field is edited', async () => {
+  const { reflowWebFormState } = await import('../lib/prompt-web-ui.js');
+  const { default: Init } = await import('../commands/init.js');
+
+  const initial = reflowWebFormState(Init.prompts, {
+    hasNocobase: 'no',
+    fetchSource: true,
+    dbDialect: 'mysql',
+    builtinDb: true,
+  });
+
+  assert.equal(initial.show.builtinDbImage, true);
+  assert.equal(initial.values.builtinDbImage, 'mysql:8');
+
+  const updated = reflowWebFormState(Init.prompts, {
+    hasNocobase: 'no',
+    fetchSource: true,
+    dbDialect: 'mariadb',
+    builtinDb: true,
+  });
+
+  assert.equal(updated.values.builtinDbImage, 'mariadb:11');
+
+  const customized = reflowWebFormState(Init.prompts, {
+    hasNocobase: 'no',
+    fetchSource: true,
+    dbDialect: 'mariadb',
+    builtinDb: true,
+    builtinDbImage: 'registry.example.com/custom-mariadb:11',
+  });
+
+  assert.equal(customized.values.builtinDbImage, 'registry.example.com/custom-mariadb:11');
+
+  const kingbase = reflowWebFormState(Init.prompts, {
+    hasNocobase: 'no',
+    fetchSource: true,
+    dbDialect: 'kingbase',
+    builtinDb: true,
+  });
+
+  assert.equal(
+    kingbase.values.builtinDbImage,
+    'registry.cn-shanghai.aliyuncs.com/nocobase/kingbase:v009r001c001b0030_single_x86',
+  );
 });
 
 test('validate_field returns a field error for an occupied app port in web UI mode', async () => {
