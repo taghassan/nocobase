@@ -155,6 +155,7 @@
     "@nocobase/plugin-notification-manager",
     "@nocobase/plugin-notification-in-app-message",
     "@nocobase/plugin-mobile",
+    "@nocobase/plugin-mcp-server",
     "@nocobase/plugin-system-settings",
     "@nocobase/plugin-ui-schema-storage",
     "@nocobase/plugin-user-data-sync",
