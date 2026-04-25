@@ -139,7 +139,7 @@ export abstract class BaseApplication<
   public systemSettings!: SystemSettingsSource;
   maintained = false;
   maintaining = false;
-  error: unknown = null;
+  error: any = null;
 
   model: ApplicationModel;
 
