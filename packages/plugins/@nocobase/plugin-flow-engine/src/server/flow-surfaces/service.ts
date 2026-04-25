@@ -376,6 +376,7 @@ const COMPOSE_FIELD_GRID_BLOCK_TYPES = new Set(['createForm', 'editForm', 'detai
 const COMPOSE_FIELD_GROUP_BLOCK_TYPES = new Set(['createForm', 'editForm', 'details']);
 const LIST_BLOCK_USES = new Set(['ListBlockModel']);
 const GRID_CARD_BLOCK_USES = new Set(['GridCardBlockModel']);
+const KANBAN_BLOCK_USES = new Set(['KanbanBlockModel']);
 const DEFAULT_CALENDAR_TITLE_FIELD_INTERFACES = ['input', 'select', 'phone', 'email', 'radioGroup'] as const;
 const DEFAULT_CALENDAR_COLOR_FIELD_INTERFACES = ['select', 'radioGroup'] as const;
 const DEFAULT_CALENDAR_DATE_TIME_FIELD_TYPES = [
@@ -387,11 +388,22 @@ const DEFAULT_CALENDAR_DATE_TIME_FIELD_TYPES = [
   'createdAt',
   'updatedAt',
 ] as const;
+const CALENDAR_DEFAULT_VIEWS = new Set(['month', 'week', 'day']);
+const CALENDAR_WEEK_STARTS = new Set([0, 1]);
 const CALENDAR_POPUP_ACTION_KEYS = ['quickCreateAction', 'eventViewAction'] as const;
 type CalendarPopupActionKey = (typeof CALENDAR_POPUP_ACTION_KEYS)[number];
+const KANBAN_POPUP_ACTION_UID_SUFFIX_BY_KEY = {
+  quickCreateAction: '-quick-create-action',
+  cardViewAction: '-card-view-action',
+} as const;
+const KANBAN_POPUP_ACTION_KEYS = Object.keys(KANBAN_POPUP_ACTION_UID_SUFFIX_BY_KEY) as Array<
+  keyof typeof KANBAN_POPUP_ACTION_UID_SUFFIX_BY_KEY
+>;
+type KanbanPopupActionKey = (typeof KANBAN_POPUP_ACTION_KEYS)[number];
 const CANONICAL_BLOCK_HEADER_USES = new Set([
   'TableBlockModel',
   'CalendarBlockModel',
+  'KanbanBlockModel',
   'FormBlockModel',
   'CreateFormModel',
   'EditFormModel',
@@ -405,7 +417,8 @@ const CANONICAL_BLOCK_HEADER_USES = new Set([
   'MapBlockModel',
   'CommentsBlockModel',
 ]);
-const LIST_LIKE_COMPOSE_BLOCK_TYPES = new Set(['list', 'gridCard']);
+const CARD_FIELD_COMPOSE_BLOCK_TYPES = new Set(['list', 'gridCard', 'kanban']);
+const RECORD_ACTION_COMPOSE_BLOCK_TYPES = new Set(['list', 'gridCard']);
 const GRID_SETTINGS_FLOW_KEY = 'gridSettings';
 const GRID_SETTINGS_LAYOUT_STEP_KEY = 'grid';
 const OPEN_VIEW_MODE_ALIASES = {
@@ -416,6 +429,7 @@ const OPEN_VIEW_SUPPORTED_MODES = new Set(['drawer', 'dialog', 'embed']);
 const FILTER_TARGET_BLOCK_USES = new Set([
   'TableBlockModel',
   'CalendarBlockModel',
+  'KanbanBlockModel',
   'DetailsBlockModel',
   'ListBlockModel',
   'GridCardBlockModel',
@@ -465,6 +479,8 @@ const UI_FIELD_MENU_DETAILS_OWNER_USES = new Set([
   'DetailsBlockModel',
   'GridCardBlockModel',
   'GridCardItemModel',
+  'KanbanBlockModel',
+  'KanbanCardItemModel',
   ...APPROVAL_DETAILS_BLOCK_USES,
   ...APPROVAL_DETAILS_GRID_USES,
 ]);
@@ -493,6 +509,8 @@ const POPUP_ACTION_USES = new Set([
   'PopupCollectionActionModel',
   'CalendarQuickCreateActionModel',
   'CalendarEventViewActionModel',
+  'KanbanQuickCreateActionModel',
+  'KanbanCardViewActionModel',
   'DuplicateActionModel',
   'AddChildActionModel',
   'MailSendActionModel',
@@ -502,6 +520,7 @@ const POPUP_HOST_DEFAULT_RECORD_CONTEXT_ACTION_USES = new Set([
   'EditActionModel',
   'PopupCollectionActionModel',
   'CalendarEventViewActionModel',
+  'KanbanCardViewActionModel',
   'AddChildActionModel',
   'DuplicateActionModel',
 ]);
@@ -549,6 +568,7 @@ const POPUP_COLLECTION_BLOCK_SCENES: Partial<Record<string, FlowSurfaceCollectio
   CommentsBlockModel: ['one', 'many'],
   TableBlockModel: ['many'],
   CalendarBlockModel: ['many'],
+  KanbanBlockModel: ['many'],
   ListBlockModel: ['many'],
   GridCardBlockModel: ['many'],
   MapBlockModel: ['many'],
@@ -1263,7 +1283,11 @@ export class FlowSurfacesService {
       ? undefined
       : this.normalizeWriteTarget('catalog', input?.target, input);
     const resolved = target ? await this.locator.resolve(target, options) : null;
-    const node = resolved ? await this.loadResolvedNode(resolved, options.transaction) : null;
+    const node = resolved
+      ? await this.loadResolvedNode(resolved, options.transaction, {
+          persistCalendarPopupHosts: false,
+        })
+      : null;
     const popupProfile = target
       ? await this.resolvePopupBlockProfile(target.uid, resolved, node, options.transaction)
       : null;
@@ -1681,9 +1705,9 @@ export class FlowSurfacesService {
     if (!POPUP_HOST_DEFAULT_RECORD_CONTEXT_ACTION_USES.has(hostUse)) {
       return false;
     }
-    // Calendar event-view is a hidden record popup host under the calendar block itself,
+    // Calendar/Kanban hidden record popup hosts live under the block itself,
     // not under a row/details record-action container.
-    if (hostUse === 'CalendarEventViewActionModel') {
+    if (hostUse === 'CalendarEventViewActionModel' || hostUse === 'KanbanCardViewActionModel') {
       return true;
     }
     return !!hostContext?.recordActionContainerUse;
@@ -2615,7 +2639,7 @@ export class FlowSurfacesService {
   private async resolveReactionRequest(
     actionName: string,
     targetInput: FlowSurfaceWriteTarget | undefined,
-    options: { transaction?: any } = {},
+    options: { transaction?: any; persistCalendarPopupHosts?: boolean } = {},
   ): Promise<{
     writeTarget: FlowSurfaceWriteTarget;
     resolved: FlowSurfaceResolvedTarget;
@@ -2626,7 +2650,9 @@ export class FlowSurfacesService {
       target: targetInput,
     });
     const resolved = await this.locator.resolve(writeTarget, options);
-    const rawNode = await this.loadResolvedNode(resolved, options.transaction);
+    const rawNode = await this.loadResolvedNode(resolved, options.transaction, {
+      persistCalendarPopupHosts: options.persistCalendarPopupHosts,
+    });
     const node = this.stripInternalSurfaceMetaFromNodeTree(_.cloneDeep(rawNode));
     const resolvedTarget = resolveReactionTarget({
       target: writeTarget,
@@ -2745,11 +2771,10 @@ export class FlowSurfacesService {
     options: { transaction?: any } = {},
   ): Promise<FlowSurfaceGetReactionMetaResult> {
     validateFlowSurfacePayloadShape('getReactionMeta', values, 'values');
-    const { writeTarget, node, resolvedTarget } = await this.resolveReactionRequest(
-      'getReactionMeta',
-      values?.target,
-      options,
-    );
+    const { writeTarget, node, resolvedTarget } = await this.resolveReactionRequest('getReactionMeta', values?.target, {
+      ...options,
+      persistCalendarPopupHosts: false,
+    });
     const context = await this.context(
       {
         target: writeTarget,
@@ -3030,7 +3055,11 @@ export class FlowSurfacesService {
     const target = this.normalizeGetTarget(input);
     const resolved = await this.locator.resolve(target, options);
     const rawNode = await this.decorateTemplateReadbackTree(
-      this.normalizePopupTreeShape(await this.loadResolvedNode(resolved, options.transaction)),
+      this.normalizePopupTreeShape(
+        await this.loadResolvedNode(resolved, options.transaction, {
+          persistCalendarPopupHosts: false,
+        }),
+      ),
       options.transaction,
     );
     const publicNode = this.stripInternalSurfaceMetaFromNodeTree(_.cloneDeep(rawNode));
@@ -3119,7 +3148,11 @@ export class FlowSurfacesService {
         this.locator.resolve(target, resolveOptions),
       loadResolvedSurfaceTree: async (resolved: FlowSurfaceResolvedTarget, transaction?: any) =>
         this.decorateTemplateReadbackTree(
-          this.normalizePopupTreeShape(await this.loadResolvedNode(resolved, transaction)),
+          this.normalizePopupTreeShape(
+            await this.loadResolvedNode(resolved, transaction, {
+              persistCalendarPopupHosts: false,
+            }),
+          ),
           transaction,
         ),
       stripInternalSurfaceMetaFromNodeTree: (node: any) => this.stripInternalSurfaceMetaFromNodeTree(node),
@@ -3426,9 +3459,12 @@ export class FlowSurfacesService {
   private async loadTemplateListTargetContext(
     target: FlowSurfaceWriteTarget,
     transaction?: any,
+    options: { persistCalendarPopupHosts?: boolean } = {},
   ): Promise<FlowSurfaceTemplateListTargetContext> {
     const resolved = await this.locator.resolve(target, { transaction });
-    const node = await this.loadResolvedNode(resolved, transaction);
+    const node = await this.loadResolvedNode(resolved, transaction, {
+      persistCalendarPopupHosts: options.persistCalendarPopupHosts,
+    });
     const resourceContext = await this.locator.resolveCollectionContext(node.uid, transaction).catch(() => null);
     const fieldContainer = await this.surfaceContext.resolveFieldContainer(node.uid, transaction).catch(() => null);
     const fieldHostBlock =
@@ -3918,7 +3954,11 @@ export class FlowSurfacesService {
     const target = _.isUndefined(values?.target)
       ? undefined
       : this.normalizeWriteTarget('listTemplates', values?.target, values);
-    const targetContext = target ? await this.loadTemplateListTargetContext(target, options.transaction) : undefined;
+    const targetContext = target
+      ? await this.loadTemplateListTargetContext(target, options.transaction, {
+          persistCalendarPopupHosts: false,
+        })
+      : undefined;
     const popupActionContext =
       requestedType === 'popup'
         ? this.resolveTemplateListPopupActionContext({
@@ -4423,7 +4463,7 @@ export class FlowSurfacesService {
     const name = normalizeRequiredTemplateString('saveTemplate', values?.name, 'name');
     const description = normalizeRequiredTemplateString('saveTemplate', values?.description, 'description');
     const saveMode = normalizeTemplateSaveMode('saveTemplate', values?.saveMode);
-    const target = this.normalizeWriteTarget('saveTemplate', values?.target, values);
+    const target = await this.prepareWriteTarget('saveTemplate', values?.target, values, options);
     const sourceNode = await this.repository.findModelById(target.uid, {
       transaction: options.transaction,
       includeAsyncNode: true,
@@ -4700,7 +4740,7 @@ export class FlowSurfacesService {
   }
 
   async convertTemplateToCopy(values: Record<string, any>, options: { transaction?: any } = {}) {
-    const target = this.normalizeWriteTarget('convertTemplateToCopy', values?.target, values);
+    const target = await this.prepareWriteTarget('convertTemplateToCopy', values?.target, values, options);
     const node = await this.repository.findModelById(target.uid, {
       transaction: options.transaction,
       includeAsyncNode: true,
@@ -4942,7 +4982,7 @@ export class FlowSurfacesService {
     } = {},
   ) {
     const popupTemplateAliasSession = options.popupTemplateAliasSession || this.createPopupTemplateAliasSession();
-    const target = this.normalizeWriteTarget('compose', values?.target, values);
+    const target = await this.prepareWriteTarget('compose', values?.target, values, options);
     const mode = this.assertComposeMode(values?.mode);
     const enabledPackages = await this.resolveEnabledPluginPackages(options);
     const normalizedBlocks = this.normalizeComposeBlocks(values?.blocks, enabledPackages);
@@ -5055,7 +5095,7 @@ export class FlowSurfacesService {
   }
 
   async configure(values: FlowSurfaceConfigureValues, options: { transaction?: any } = {}) {
-    const target = this.normalizeWriteTarget('configure', values?.target, values);
+    const target = await this.prepareWriteTarget('configure', values?.target, values, options);
     if (!_.isPlainObject(values.changes) || !Object.keys(values.changes).length) {
       throwBadRequest('flowSurfaces configure requires a non-empty changes object');
     }
@@ -5075,6 +5115,9 @@ export class FlowSurfacesService {
     }
     if (current?.use === 'CalendarBlockModel') {
       return this.configureCalendarBlock(target, current, values.changes, options);
+    }
+    if (current?.use === 'KanbanBlockModel') {
+      return this.configureKanbanBlock(target, current, values.changes, options);
     }
     if (SIMPLE_FORM_BLOCK_USES.has(current?.use || '')) {
       return this.configureFormBlock(target, current.use, values.changes, options);
@@ -6005,7 +6048,7 @@ export class FlowSurfacesService {
       );
     }
 
-    const target = this.normalizeWriteTarget('addBlock', values?.target, values);
+    const target = await this.prepareWriteTarget('addBlock', values?.target, values, options);
     await this.assertBlockTemplateCompatibility('addBlock', target, template, options.transaction);
     const { parentUid, subKey, subType, popupSurface } = await this.surfaceContext.resolveBlockParent(
       target,
@@ -6081,7 +6124,7 @@ export class FlowSurfacesService {
       transaction: options.transaction,
       expectedType: 'block',
     });
-    const target = this.normalizeWriteTarget('addField', values?.target, values);
+    const target = await this.prepareWriteTarget('addField', values?.target, values, options);
     const resolvedTarget = await this.locator.resolve(target, options);
     const container = await this.surfaceContext.resolveFieldContainer(resolvedTarget.uid, options.transaction);
     const result = await this.applyTemplateFieldsToBlock(
@@ -6199,7 +6242,7 @@ export class FlowSurfacesService {
       await this.persistCreatedKeysForAction('addBlock', values, result, options.transaction);
       return result;
     }
-    const target = this.normalizeWriteTarget('addBlock', values?.target, values);
+    const target = await this.prepareWriteTarget('addBlock', values?.target, values, options);
     ensureNoRawDirectAddKeys('addBlock', values, ['props', 'decoratorProps', 'stepParams', 'flowRegistry']);
     const inlineSettings = this.normalizeInlineSettings('addBlock', values.settings);
     const semanticResource = this.normalizeResourceInput(values.resource);
@@ -6258,7 +6301,7 @@ export class FlowSurfacesService {
       resourceField: rawResourceInit ? 'resourceInit' : semanticResource?.kind === 'raw' ? 'resource' : undefined,
     });
     const effectiveResourceInit =
-      catalogItem.use === 'CalendarBlockModel' &&
+      (catalogItem.use === 'CalendarBlockModel' || catalogItem.use === 'KanbanBlockModel') &&
       resolvedResourceInit.collectionName &&
       !resolvedResourceInit.dataSourceKey
         ? {
@@ -6273,7 +6316,13 @@ export class FlowSurfacesService {
             resourceInit: effectiveResourceInit,
             props: values.props,
           })
-        : values.props;
+        : catalogItem.use === 'KanbanBlockModel'
+          ? this.buildKanbanInitialBlockProps({
+              actionName: 'addBlock',
+              resourceInit: effectiveResourceInit,
+              props: values.props,
+            })
+          : values.props;
     const initialGrid = options.deferAutoLayout
       ? null
       : await this.repository.findModelById(parentUid, {
@@ -6383,7 +6432,7 @@ export class FlowSurfacesService {
       await this.persistCreatedKeysForAction('addField', values, result, options.transaction);
       return result;
     }
-    const target = this.normalizeWriteTarget('addField', values?.target, values);
+    const target = await this.prepareWriteTarget('addField', values?.target, values, options);
     ensureNoRawDirectAddKeys('addField', values, [
       'wrapperProps',
       'fieldProps',
@@ -6714,7 +6763,7 @@ export class FlowSurfacesService {
       popupTemplateAliasSession?: FlowSurfacePopupTemplateAliasSession;
     } = {},
   ) {
-    const target = this.normalizeWriteTarget('addAction', values?.target, values);
+    const target = await this.prepareWriteTarget('addAction', values?.target, values, options);
     ensureNoDirectActionScopeKey('addAction', values);
     ensureNoRawDirectAddKeys('addAction', values, ['props', 'decoratorProps', 'stepParams', 'flowRegistry']);
     const inlineSettings = this.normalizeInlineSettings('addAction', values.settings);
@@ -6822,7 +6871,7 @@ export class FlowSurfacesService {
       popupTemplateAliasSession?: FlowSurfacePopupTemplateAliasSession;
     } = {},
   ) {
-    const target = this.normalizeWriteTarget('addRecordAction', values?.target, values);
+    const target = await this.prepareWriteTarget('addRecordAction', values?.target, values, options);
     ensureNoDirectActionScopeKey('addRecordAction', values);
     ensureNoRawDirectAddKeys('addRecordAction', values, ['props', 'decoratorProps', 'stepParams', 'flowRegistry']);
     const inlineSettings = this.normalizeInlineSettings('addRecordAction', values.settings);
@@ -9551,7 +9600,7 @@ export class FlowSurfacesService {
     } = {},
   ) {
     validateFlowSurfacePayloadShape('updateSettings', values, 'values');
-    const writeTarget = this.normalizeWriteTarget('updateSettings', values?.target, values);
+    const writeTarget = await this.prepareWriteTarget('updateSettings', values?.target, values, options);
     const target = await this.locator.resolve(writeTarget, options);
     const current = await this.loadResolvedNode(target, options.transaction);
     const normalizedValues = _.cloneDeep(values || {});
@@ -9618,6 +9667,7 @@ export class FlowSurfacesService {
       !_.isUndefined(nextPayload.flowRegistry) || !_.isUndefined(nextPayload.stepParams);
 
     this.validateCalendarBlockState('updateSettings', effectiveNode);
+    this.validateKanbanBlockState('updateSettings', effectiveNode);
 
     if (
       shouldValidateFlowRegistry &&
@@ -9657,6 +9707,9 @@ export class FlowSurfacesService {
     }
     if (current.use === 'CalendarBlockModel') {
       await this.ensureCalendarBlockPopupHosts(effectiveNode, options.transaction);
+    }
+    if (current.use === 'KanbanBlockModel') {
+      await this.ensureKanbanBlockPopupHosts(effectiveNode, options.transaction);
     }
     await this.syncFlowTemplateUsagesForNodeTree(current.uid, options.transaction);
     if (APPROVAL_SINGLETON_ACTION_USES.has(current.use || '')) {
@@ -10260,7 +10313,7 @@ export class FlowSurfacesService {
   }
 
   async setEventFlows(values: Record<string, any>, options: { transaction?: any } = {}) {
-    const writeTarget = this.normalizeWriteTarget('setEventFlows', values?.target, values);
+    const writeTarget = await this.prepareWriteTarget('setEventFlows', values?.target, values, options);
     const target = await this.locator.resolve(writeTarget, options);
     const current = await this.loadResolvedNode(target, options.transaction);
     const contract = getNodeContract(current?.use);
@@ -10300,7 +10353,7 @@ export class FlowSurfacesService {
   }
 
   async setLayout(values: Record<string, any>, options: { transaction?: any } = {}) {
-    const target = this.normalizeWriteTarget('setLayout', values?.target, values);
+    const target = await this.prepareWriteTarget('setLayout', values?.target, values, options);
     const resolved = await this.locator.resolve(target, options);
     const grid = await this.surfaceContext.resolveGridNode(resolved.uid, options.transaction);
     const contract = getNodeContract(grid?.use);
@@ -10426,7 +10479,7 @@ export class FlowSurfacesService {
   async apply(values: FlowSurfaceApplyValues, options: { transaction?: any } = {}) {
     this.assertApplyMode(values.mode);
     validateFlowSurfacePayloadShape('apply', values?.spec, 'spec');
-    const target = this.normalizeWriteTarget('apply', values?.target, values);
+    const target = await this.prepareWriteTarget('apply', values?.target, values, options);
     const spec = values.spec as FlowSurfaceApplySpec;
     const readback = await this.get(target, options);
     const compiled = compileApplySpec(target, readback.tree, spec);
@@ -10594,6 +10647,90 @@ export class FlowSurfacesService {
       throwBadRequest(`flowSurfaces ${actionName} requires target.uid`);
     }
     return { uid };
+  }
+
+  private parseCalendarPopupActionTargetUid(
+    uid: string,
+  ): { calendarUid: string; actionKey: CalendarPopupActionKey } | null {
+    const normalizedUid = String(uid || '').trim();
+    if (!normalizedUid) {
+      return null;
+    }
+    for (const actionKey of CALENDAR_POPUP_ACTION_KEYS) {
+      const suffix = `-${actionKey}`;
+      if (normalizedUid.endsWith(suffix) && normalizedUid.length > suffix.length) {
+        return {
+          calendarUid: normalizedUid.slice(0, -suffix.length),
+          actionKey,
+        };
+      }
+    }
+    return null;
+  }
+
+  private parseKanbanPopupActionTargetUid(uid: string): { kanbanUid: string; actionKey: KanbanPopupActionKey } | null {
+    const normalizedUid = String(uid || '').trim();
+    if (!normalizedUid) {
+      return null;
+    }
+    for (const actionKey of KANBAN_POPUP_ACTION_KEYS) {
+      const suffix = KANBAN_POPUP_ACTION_UID_SUFFIX_BY_KEY[actionKey];
+      if (normalizedUid.endsWith(suffix) && normalizedUid.length > suffix.length) {
+        return {
+          kanbanUid: normalizedUid.slice(0, -suffix.length),
+          actionKey,
+        };
+      }
+    }
+    return null;
+  }
+
+  private async prepareWriteTarget(
+    actionName: string,
+    target: any,
+    values?: Record<string, any>,
+    options: { transaction?: any } = {},
+  ): Promise<FlowSurfaceWriteTarget> {
+    const writeTarget = this.normalizeWriteTarget(actionName, target, values);
+    const parsedCalendarPopupTarget = this.parseCalendarPopupActionTargetUid(writeTarget.uid);
+    const parsedKanbanPopupTarget = this.parseKanbanPopupActionTargetUid(writeTarget.uid);
+    if (!parsedCalendarPopupTarget && !parsedKanbanPopupTarget) {
+      return writeTarget;
+    }
+
+    const persistedTarget = await this.repository.findModelById(writeTarget.uid, {
+      transaction: options.transaction,
+      includeAsyncNode: true,
+    });
+    if (persistedTarget?.uid) {
+      return writeTarget;
+    }
+
+    if (parsedCalendarPopupTarget) {
+      const calendarNode = await this.repository
+        .findModelById(parsedCalendarPopupTarget.calendarUid, {
+          transaction: options.transaction,
+          includeAsyncNode: true,
+        })
+        .catch(() => null);
+      if (calendarNode?.use === 'CalendarBlockModel') {
+        await this.ensureCalendarBlockPopupHosts(calendarNode, options.transaction);
+      }
+    }
+
+    if (parsedKanbanPopupTarget) {
+      const kanbanNode = await this.repository
+        .findModelById(parsedKanbanPopupTarget.kanbanUid, {
+          transaction: options.transaction,
+          includeAsyncNode: true,
+        })
+        .catch(() => null);
+      if (kanbanNode?.use === 'KanbanBlockModel') {
+        await this.ensureKanbanBlockPopupHosts(kanbanNode, options.transaction);
+      }
+    }
+
+    return writeTarget;
   }
 
   private normalizeRootUidValue(actionName: string, values: Record<string, any>): string {
@@ -11229,6 +11366,11 @@ export class FlowSurfacesService {
         subType: 'array',
       };
     }
+    if (use === 'KanbanBlockModel') {
+      throwBadRequest(
+        `flowSurfaces addRecordAction target '${use}' is not supported; kanban record actions are not exposed in the public API v1`,
+      );
+    }
     if (use === 'TableActionsColumnModel') {
       throwBadRequest(
         `flowSurfaces addRecordAction target '${use}' is an internal record action container; pass the owning table block uid instead`,
@@ -11692,6 +11834,27 @@ export class FlowSurfacesService {
         );
       }
     }
+    if (type === 'kanban') {
+      if (hasFieldGroups) {
+        throwBadRequest(
+          `flowSurfaces compose block #${
+            index + 1
+          } kanban does not support fieldGroups[] on the main block; add card fields directly under fields[] instead`,
+        );
+      }
+      if (hasRecordActions) {
+        throwBadRequest(
+          `flowSurfaces compose block #${
+            index + 1
+          } kanban does not support recordActions[] on the main block; configure block actions only in v1`,
+        );
+      }
+      if (Object.prototype.hasOwnProperty.call(input, 'fieldsLayout')) {
+        throwBadRequest(
+          `flowSurfaces compose block #${index + 1} kanban does not support fieldsLayout on the main block`,
+        );
+      }
+    }
     if (hasFields && hasFieldGroups) {
       throwBadRequest(`flowSurfaces compose block #${index + 1} cannot mix fields with fieldGroups`);
     }
@@ -11770,7 +11933,7 @@ export class FlowSurfacesService {
   }
 
   private resolveComposeFieldContainerUid(blockSpec: any, blockResult: any) {
-    if (LIST_LIKE_COMPOSE_BLOCK_TYPES.has(blockSpec.type)) {
+    if (CARD_FIELD_COMPOSE_BLOCK_TYPES.has(blockSpec.type)) {
       return blockResult.itemUid || blockResult.uid;
     }
     return blockResult.uid;
@@ -11783,7 +11946,7 @@ export class FlowSurfacesService {
     if (blockSpec.type === 'details') {
       return blockResult.uid;
     }
-    if (!LIST_LIKE_COMPOSE_BLOCK_TYPES.has(blockSpec.type)) {
+    if (!RECORD_ACTION_COMPOSE_BLOCK_TYPES.has(blockSpec.type)) {
       throwBadRequest(
         `flowSurfaces compose recordActions only support 'table', 'details', 'list' or 'gridCard' blocks`,
       );
@@ -12236,6 +12399,16 @@ export class FlowSurfacesService {
     const allowedKeys = getConfigureOptionKeysForUse('CalendarBlockModel');
     const cardSettings = buildBlockTitleDescriptionFromSemanticChanges(changes);
     assertSupportedSimpleChanges('calendar', changes, allowedKeys);
+    this.validateCalendarSettingValues('configure', {
+      defaultView: changes.defaultView,
+      quickCreateEvent: changes.quickCreateEvent,
+      showLunar: changes.showLunar,
+      weekStart: changes.weekStart,
+    });
+    const defaultView = hasOwnDefined(changes, 'defaultView') ? String(changes.defaultView).trim() : undefined;
+    const quickCreateEvent = hasOwnDefined(changes, 'quickCreateEvent') ? changes.quickCreateEvent : undefined;
+    const showLunar = hasOwnDefined(changes, 'showLunar') ? changes.showLunar : undefined;
+    const weekStart = hasOwnDefined(changes, 'weekStart') ? changes.weekStart : undefined;
 
     const currentResourceInit = this.getCalendarBlockResourceInit(current);
     const nextResourceInit = changes.resource ? normalizeSimpleResourceInit(changes.resource) : currentResourceInit;
@@ -12276,10 +12449,10 @@ export class FlowSurfacesService {
         target,
         props: buildDefinedPayload({
           fieldNames,
-          defaultView: changes.defaultView,
-          enableQuickCreateEvent: changes.quickCreateEvent,
-          showLunar: changes.showLunar,
-          weekStart: changes.weekStart,
+          defaultView,
+          enableQuickCreateEvent: quickCreateEvent,
+          showLunar,
+          weekStart,
           quickCreatePopupSettings,
           eventPopupSettings,
         }),
@@ -12316,16 +12489,12 @@ export class FlowSurfacesService {
                     : {}),
                   ...(hasOwnDefined(changes, 'startField') ? { startDateField: { start: fieldNames.start } } : {}),
                   ...(hasOwnDefined(changes, 'endField') ? { endDateField: { end: fieldNames.end || '' } } : {}),
-                  ...(hasOwnDefined(changes, 'defaultView')
-                    ? { defaultView: { defaultView: changes.defaultView } }
-                    : {}),
+                  ...(hasOwnDefined(changes, 'defaultView') ? { defaultView: { defaultView } } : {}),
                   ...(hasOwnDefined(changes, 'quickCreateEvent')
-                    ? { quickCreateEvent: { enableQuickCreateEvent: changes.quickCreateEvent !== false } }
+                    ? { quickCreateEvent: { enableQuickCreateEvent: quickCreateEvent !== false } }
                     : {}),
-                  ...(hasOwnDefined(changes, 'showLunar')
-                    ? { showLunar: { showLunar: changes.showLunar === true } }
-                    : {}),
-                  ...(hasOwnDefined(changes, 'weekStart') ? { weekStart: { weekStart: changes.weekStart } } : {}),
+                  ...(hasOwnDefined(changes, 'showLunar') ? { showLunar: { showLunar: showLunar === true } } : {}),
+                  ...(hasOwnDefined(changes, 'weekStart') ? { weekStart: { weekStart } } : {}),
                   ...(hasOwnDefined(changes, 'dataScope') ? { dataScope: { filter: changes.dataScope } } : {}),
                   ...(hasOwnDefined(changes, 'linkageRules') ? { linkageRules: { value: changes.linkageRules } } : {}),
                 }),
@@ -12342,6 +12511,454 @@ export class FlowSurfacesService {
     });
     await this.ensureCalendarBlockPopupHosts(reloaded, options.transaction);
     return result;
+  }
+
+  private async configureKanbanBlock(
+    target: FlowSurfaceWriteTarget,
+    current: any,
+    changes: Record<string, any>,
+    options: { transaction?: any },
+  ) {
+    const allowedKeys = getConfigureOptionKeysForUse('KanbanBlockModel');
+    const blockCardSettings = buildBlockTitleDescriptionFromSemanticChanges(changes);
+    assertSupportedSimpleChanges('kanban', changes, allowedKeys);
+
+    if (!_.isUndefined(changes.dragEnabled) && !_.isBoolean(changes.dragEnabled)) {
+      throwBadRequest('flowSurfaces configure kanban dragEnabled must be a boolean');
+    }
+    if (!_.isUndefined(changes.quickCreateEnabled) && !_.isBoolean(changes.quickCreateEnabled)) {
+      throwBadRequest('flowSurfaces configure kanban quickCreateEnabled must be a boolean');
+    }
+    if (!_.isUndefined(changes.enableCardClick) && !_.isBoolean(changes.enableCardClick)) {
+      throwBadRequest('flowSurfaces configure kanban enableCardClick must be a boolean');
+    }
+    if (!_.isUndefined(changes.cardLabelWrap) && !_.isBoolean(changes.cardLabelWrap)) {
+      throwBadRequest('flowSurfaces configure kanban cardLabelWrap must be a boolean');
+    }
+    if (!_.isUndefined(changes.cardColon) && !_.isBoolean(changes.cardColon)) {
+      throwBadRequest('flowSurfaces configure kanban cardColon must be a boolean');
+    }
+    if (!_.isUndefined(changes.styleVariant)) {
+      const normalizedStyleVariant = String(changes.styleVariant || '').trim();
+      if (normalizedStyleVariant !== 'default' && normalizedStyleVariant !== 'filled') {
+        throwBadRequest(`flowSurfaces configure kanban styleVariant must be 'default' or 'filled'`);
+      }
+    }
+
+    const currentResourceInit = this.getKanbanBlockResourceInit(current);
+    const nextResourceInit = changes.resource ? normalizeSimpleResourceInit(changes.resource) : currentResourceInit;
+    if (nextResourceInit.collectionName && !nextResourceInit.dataSourceKey) {
+      nextResourceInit.dataSourceKey = 'main';
+    }
+    const resourceChanged = !!changes.resource;
+    const { collection, collectionName, dataSourceKey } = this.assertKanbanCollectionCompatible(
+      'configure',
+      nextResourceInit,
+    );
+    const currentItemNode = getSingleNodeSubModel(current?.subModels?.item);
+    if (!currentItemNode?.uid) {
+      throwConflict(
+        `flowSurfaces configure kanban block '${current?.uid || target.uid}' is missing its item subtree`,
+        'FLOW_SURFACE_KANBAN_ITEM_SUBTREE_MISSING',
+      );
+    }
+
+    const currentProps = _.cloneDeep(current?.props || {});
+    const currentGroupFieldName =
+      String(currentProps.groupField || this.getKanbanDefaultGroupFieldName(collection) || '').trim() || undefined;
+    let nextGroupFieldName = hasOwnDefined(changes, 'groupField')
+      ? this.normalizeKanbanFieldNameInput(changes.groupField, 'flowSurfaces configure kanban groupField', {
+          allowEmpty: true,
+        }) || undefined
+      : currentGroupFieldName;
+    let nextGroupField = this.getKanbanGroupField(collection, nextGroupFieldName);
+    if (!nextGroupField || !this.isKanbanGroupField(nextGroupField)) {
+      nextGroupFieldName = this.getKanbanDefaultGroupFieldName(collection);
+      nextGroupField = this.getKanbanGroupField(collection, nextGroupFieldName);
+    }
+    if (!nextGroupFieldName || !nextGroupField || !this.isKanbanGroupField(nextGroupField)) {
+      throwBadRequest(
+        `flowSurfaces configure kanban collection '${dataSourceKey}.${collectionName}' must resolve a supported groupField`,
+      );
+    }
+    const groupFieldChanged = resourceChanged || nextGroupFieldName !== currentGroupFieldName;
+    const isRelationGroupField = this.isKanbanAssociationGroupField(nextGroupField);
+    const defaultGroupTitleField = this.getKanbanDefaultRelationTitleFieldName(nextGroupField, dataSourceKey);
+    const nextGroupTitleField = isRelationGroupField
+      ? (() => {
+          const requested = hasOwnDefined(changes, 'groupTitleField')
+            ? this.normalizeKanbanFieldNameInput(
+                changes.groupTitleField,
+                'flowSurfaces configure kanban groupTitleField',
+                { allowEmpty: true },
+              ) || undefined
+            : groupFieldChanged
+              ? defaultGroupTitleField
+              : this.normalizeKanbanFieldNameInput(currentProps.groupTitleField || defaultGroupTitleField, '', {
+                  allowEmpty: true,
+                }) || undefined;
+          if (requested) {
+            this.assertKanbanRelationFieldBinding({
+              actionName: 'configure',
+              collectionName,
+              dataSourceKey,
+              groupField: nextGroupField,
+              fieldName: requested,
+              kind: 'groupTitleField',
+            });
+          }
+          return requested;
+        })()
+      : undefined;
+    const nextGroupColorField = isRelationGroupField
+      ? (() => {
+          const requested = hasOwnDefined(changes, 'groupColorField')
+            ? this.normalizeKanbanFieldNameInput(
+                changes.groupColorField,
+                'flowSurfaces configure kanban groupColorField',
+                { allowEmpty: true },
+              ) || undefined
+            : groupFieldChanged
+              ? undefined
+              : this.normalizeKanbanFieldNameInput(currentProps.groupColorField, '', { allowEmpty: true }) || undefined;
+          if (requested) {
+            this.assertKanbanRelationFieldBinding({
+              actionName: 'configure',
+              collectionName,
+              dataSourceKey,
+              groupField: nextGroupField,
+              fieldName: requested,
+              kind: 'groupColorField',
+            });
+          }
+          return requested;
+        })()
+      : undefined;
+    const inlineGroupOptions = this.buildKanbanInlineGroupOptions(nextGroupField);
+    const explicitGroupOptions = Object.prototype.hasOwnProperty.call(changes, 'groupOptions')
+      ? this.normalizeKanbanGroupOptions(changes.groupOptions, 'flowSurfaces configure kanban groupOptions')
+      : undefined;
+    const currentGroupOptions = Array.isArray(currentProps.groupOptions)
+      ? _.cloneDeep(currentProps.groupOptions)
+      : undefined;
+    const nextGroupOptions = this.mergeKanbanInlineGroupOptions(
+      inlineGroupOptions,
+      !_.isUndefined(explicitGroupOptions)
+        ? explicitGroupOptions
+        : groupFieldChanged
+          ? inlineGroupOptions
+          : currentGroupOptions,
+      'flowSurfaces configure kanban groupOptions',
+    );
+
+    let nextDragSortBy: string | undefined;
+    if (hasOwnDefined(changes, 'dragSortBy')) {
+      const requested = this.resolveKanbanCompatibleSortFieldName({
+        actionName: 'configure',
+        collection,
+        groupField: nextGroupField,
+        requested: changes.dragSortBy,
+        allowEmpty: true,
+      });
+      nextDragSortBy = requested || undefined;
+    } else {
+      try {
+        const requested = currentProps.dragSortBy
+          ? this.resolveKanbanCompatibleSortFieldName({
+              actionName: 'configure',
+              collection,
+              groupField: nextGroupField,
+              requested: currentProps.dragSortBy,
+              allowEmpty: true,
+            })
+          : undefined;
+        nextDragSortBy = requested || undefined;
+      } catch (error) {
+        nextDragSortBy = undefined;
+      }
+    }
+    const requestedDragEnabled = hasOwnDefined(changes, 'dragEnabled') ? changes.dragEnabled : currentProps.dragEnabled;
+    const nextDragEnabled = requestedDragEnabled === true && !!nextDragSortBy;
+    const nextStyleVariantProp = hasOwnDefined(changes, 'styleVariant')
+      ? String(changes.styleVariant || '').trim() === 'default'
+        ? 'default'
+        : 'color'
+      : undefined;
+    const nextStyleVariantSetting = hasOwnDefined(changes, 'styleVariant')
+      ? String(changes.styleVariant || '').trim()
+      : undefined;
+    const quickCreatePopup = Object.prototype.hasOwnProperty.call(changes, 'quickCreatePopup')
+      ? await this.normalizeKanbanPopupConfigureValue({
+          actionName: 'configure kanban quickCreatePopup',
+          blockUid: current.uid,
+          actionKey: 'quickCreateAction',
+          value: changes.quickCreatePopup,
+          transaction: options.transaction,
+        })
+      : undefined;
+    const cardPopup = Object.prototype.hasOwnProperty.call(changes, 'cardPopup')
+      ? await this.normalizeKanbanPopupConfigureValue({
+          actionName: 'configure kanban cardPopup',
+          blockUid: current.uid,
+          actionKey: 'cardViewAction',
+          value: changes.cardPopup,
+          transaction: options.transaction,
+        })
+      : undefined;
+    const nextCardLayout = hasOwnDefined(changes, 'cardLayout')
+      ? normalizeSimpleLayoutValue(changes.cardLayout)
+      : undefined;
+
+    const shouldWriteGrouping =
+      resourceChanged ||
+      hasOwnDefined(changes, 'groupField') ||
+      hasOwnDefined(changes, 'groupTitleField') ||
+      hasOwnDefined(changes, 'groupColorField') ||
+      hasOwnDefined(changes, 'groupOptions') ||
+      groupFieldChanged;
+    const shouldWriteDrag =
+      resourceChanged ||
+      hasOwnDefined(changes, 'dragEnabled') ||
+      hasOwnDefined(changes, 'dragSortBy') ||
+      groupFieldChanged;
+
+    const blockProps = buildDefinedPayload({
+      ...(shouldWriteGrouping
+        ? {
+            groupField: nextGroupFieldName,
+            groupTitleField: nextGroupTitleField ?? null,
+            groupColorField: nextGroupColorField ?? null,
+            groupOptions: nextGroupOptions || [],
+          }
+        : {}),
+      ...(hasOwnDefined(changes, 'styleVariant') ? { styleVariant: nextStyleVariantProp } : {}),
+      ...(hasOwnDefined(changes, 'sorting') ? { globalSort: changes.sorting } : {}),
+      ...(shouldWriteDrag
+        ? {
+            dragEnabled: nextDragEnabled,
+            dragSortBy: nextDragSortBy ?? null,
+          }
+        : {}),
+      ...(hasOwnDefined(changes, 'quickCreateEnabled')
+        ? {
+            quickCreateEnabled: changes.quickCreateEnabled === true,
+          }
+        : {}),
+      ...(hasOwnDefined(changes, 'pageSize') ? { pageSize: changes.pageSize } : {}),
+      ...(hasOwnDefined(changes, 'columnWidth') ? { columnWidth: changes.columnWidth } : {}),
+      ...(hasOwnDefined(changes, 'quickCreatePopup')
+        ? {
+            popupMode: quickCreatePopup?.mode ?? null,
+            popupSize: quickCreatePopup?.size ?? null,
+            popupTemplateUid: quickCreatePopup?.popupTemplateUid ?? null,
+            popupPageModelClass: quickCreatePopup?.pageModelClass ?? null,
+            popupTargetUid: quickCreatePopup?.uid ?? null,
+          }
+        : {}),
+    });
+    const blockStepParams = buildDefinedPayload({
+      ...(blockCardSettings ? { cardSettings: blockCardSettings } : {}),
+      ...(changes.resource
+        ? {
+            resourceSettings: {
+              init: nextResourceInit,
+            },
+          }
+        : {}),
+      ...(shouldWriteGrouping ||
+      hasOwnDefined(changes, 'styleVariant') ||
+      hasOwnDefined(changes, 'sorting') ||
+      shouldWriteDrag ||
+      hasOwnDefined(changes, 'quickCreateEnabled') ||
+      hasOwnDefined(changes, 'quickCreatePopup') ||
+      hasOwnDefined(changes, 'pageSize') ||
+      hasOwnDefined(changes, 'columnWidth') ||
+      hasOwnDefined(changes, 'dataScope')
+        ? {
+            kanbanSettings: buildDefinedPayload({
+              ...(shouldWriteGrouping
+                ? {
+                    grouping: buildDefinedPayload({
+                      groupField: nextGroupFieldName,
+                      groupTitleField: nextGroupTitleField ?? null,
+                      groupColorField: nextGroupColorField ?? null,
+                      groupOptions: nextGroupOptions || [],
+                    }),
+                  }
+                : {}),
+              ...(hasOwnDefined(changes, 'styleVariant')
+                ? {
+                    styleVariant: {
+                      styleVariant: nextStyleVariantSetting,
+                    },
+                  }
+                : {}),
+              ...(hasOwnDefined(changes, 'sorting')
+                ? {
+                    defaultSorting: {
+                      sort: changes.sorting,
+                    },
+                  }
+                : {}),
+              ...(shouldWriteDrag
+                ? {
+                    dragEnabled: {
+                      dragEnabled: nextDragEnabled,
+                    },
+                    dragSortBy: {
+                      dragSortBy: nextDragSortBy ?? null,
+                    },
+                  }
+                : {}),
+              ...(hasOwnDefined(changes, 'quickCreateEnabled')
+                ? {
+                    quickCreate: {
+                      quickCreateEnabled: changes.quickCreateEnabled === true,
+                    },
+                  }
+                : {}),
+              ...(hasOwnDefined(changes, 'quickCreatePopup')
+                ? {
+                    popup: quickCreatePopup || {},
+                  }
+                : {}),
+              ...(hasOwnDefined(changes, 'pageSize')
+                ? {
+                    pageSize: {
+                      pageSize: changes.pageSize,
+                    },
+                  }
+                : {}),
+              ...(hasOwnDefined(changes, 'columnWidth')
+                ? {
+                    columnWidth: {
+                      columnWidth: changes.columnWidth,
+                    },
+                  }
+                : {}),
+              ...(hasOwnDefined(changes, 'dataScope')
+                ? {
+                    dataScope: {
+                      filter: changes.dataScope,
+                    },
+                  }
+                : {}),
+            }),
+          }
+        : {}),
+    });
+
+    const itemProps = buildDefinedPayload({
+      ...(hasOwnDefined(changes, 'enableCardClick')
+        ? {
+            enableCardClick: changes.enableCardClick === true,
+          }
+        : {}),
+      ...(hasOwnDefined(changes, 'cardPopup')
+        ? {
+            openMode: cardPopup?.mode ?? null,
+            popupSize: cardPopup?.size ?? null,
+            popupTemplateUid: cardPopup?.popupTemplateUid ?? null,
+            pageModelClass: cardPopup?.pageModelClass ?? null,
+            popupTargetUid: cardPopup?.uid ?? null,
+          }
+        : {}),
+      ...(hasOwnDefined(changes, 'cardLayout')
+        ? {
+            layout: nextCardLayout,
+          }
+        : {}),
+      ...(hasOwnDefined(changes, 'cardLabelAlign') ? { labelAlign: changes.cardLabelAlign } : {}),
+      ...(hasOwnDefined(changes, 'cardLabelWidth') ? { labelWidth: changes.cardLabelWidth ?? null } : {}),
+      ...(hasOwnDefined(changes, 'cardLabelWrap') ? { labelWrap: changes.cardLabelWrap === true } : {}),
+      ...(hasOwnDefined(changes, 'cardColon') ? { colon: changes.cardColon === true } : {}),
+    });
+    const itemStepParams = buildDefinedPayload({
+      ...(hasOwnDefined(changes, 'enableCardClick') ||
+      hasOwnDefined(changes, 'cardPopup') ||
+      hasOwnDefined(changes, 'cardLayout') ||
+      hasOwnDefined(changes, 'cardLabelAlign') ||
+      hasOwnDefined(changes, 'cardLabelWidth') ||
+      hasOwnDefined(changes, 'cardLabelWrap') ||
+      hasOwnDefined(changes, 'cardColon')
+        ? {
+            cardSettings: buildDefinedPayload({
+              ...(hasOwnDefined(changes, 'enableCardClick')
+                ? {
+                    click: {
+                      enableCardClick: changes.enableCardClick === true,
+                    },
+                  }
+                : {}),
+              ...(hasOwnDefined(changes, 'cardPopup')
+                ? {
+                    popup: cardPopup || {},
+                  }
+                : {}),
+              ...(hasOwnDefined(changes, 'cardLayout') ||
+              hasOwnDefined(changes, 'cardLabelAlign') ||
+              hasOwnDefined(changes, 'cardLabelWidth') ||
+              hasOwnDefined(changes, 'cardLabelWrap') ||
+              hasOwnDefined(changes, 'cardColon')
+                ? {
+                    layout: buildDefinedPayload({
+                      layout: nextCardLayout,
+                      labelAlign: changes.cardLabelAlign,
+                      labelWidth: hasOwnDefined(changes, 'cardLabelWidth') ? changes.cardLabelWidth ?? null : undefined,
+                      labelWrap: hasOwnDefined(changes, 'cardLabelWrap') ? changes.cardLabelWrap === true : undefined,
+                      colon: hasOwnDefined(changes, 'cardColon') ? changes.cardColon === true : undefined,
+                    }),
+                  }
+                : {}),
+            }),
+          }
+        : {}),
+    });
+
+    const updated = new Set<string>();
+    if (
+      Object.keys(blockProps).length ||
+      Object.keys(blockStepParams).length ||
+      hasDefinedValue(changes, ['height', 'heightMode'])
+    ) {
+      const blockResult = await this.updateSettings(
+        {
+          target,
+          props: blockProps,
+          decoratorProps: buildDefinedPayload({
+            height: changes.height,
+            heightMode: normalizePublicBlockHeightMode(changes.heightMode),
+          }),
+          stepParams: blockStepParams,
+        },
+        options,
+      );
+      _.castArray(blockResult?.updated || []).forEach((key) => updated.add(String(key)));
+    }
+    if (Object.keys(itemProps).length || Object.keys(itemStepParams).length) {
+      const itemResult = await this.updateSettings(
+        {
+          target: {
+            uid: currentItemNode.uid,
+          },
+          props: itemProps,
+          stepParams: itemStepParams,
+        },
+        options,
+      );
+      _.castArray(itemResult?.updated || []).forEach((key) => updated.add(String(key)));
+    }
+
+    const reloaded = await this.repository.findModelById(current.uid, {
+      transaction: options.transaction,
+      includeAsyncNode: true,
+    });
+    await this.ensureKanbanBlockPopupHosts(reloaded, options.transaction);
+
+    return buildDefinedPayload({
+      uid: current.uid,
+      ...(updated.size ? { updated: Array.from(updated) } : {}),
+    });
   }
 
   private async configureFormBlock(
@@ -14936,6 +15553,505 @@ export class FlowSurfacesService {
     );
   }
 
+  private normalizeKanbanFieldNameInput(
+    value: any,
+    context: string,
+    options: {
+      allowEmpty?: boolean;
+    } = {},
+  ) {
+    if (_.isUndefined(value)) {
+      return undefined;
+    }
+    if (_.isNull(value) || value === '') {
+      return options.allowEmpty ? '' : undefined;
+    }
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return options.allowEmpty ? '' : undefined;
+    }
+    return normalized;
+  }
+
+  private getKanbanCollectionFilterTargetKey(collection: any) {
+    const filterTargetKey = collection?.filterTargetKey || collection?.options?.filterTargetKey;
+    if (Array.isArray(filterTargetKey)) {
+      return filterTargetKey.length === 1 ? String(filterTargetKey[0] || '').trim() || undefined : undefined;
+    }
+    return typeof filterTargetKey === 'string' ? filterTargetKey.trim() || undefined : undefined;
+  }
+
+  private isKanbanMultipleGroupField(field: any) {
+    return new Set(['m2m', 'o2m', 'mbm']).has(String(getFieldInterface(field) || '').trim());
+  }
+
+  private isKanbanAssociationGroupField(field: any) {
+    return String(getFieldInterface(field) || '').trim() === 'm2o';
+  }
+
+  private isKanbanGroupField(field: any) {
+    const fieldInterface = String(getFieldInterface(field) || '').trim();
+    return (fieldInterface === 'select' || fieldInterface === 'm2o') && !this.isKanbanMultipleGroupField(field);
+  }
+
+  private getKanbanGroupFieldCandidates(collection: any) {
+    return getCollectionFields(collection).filter((field) => this.isKanbanGroupField(field) && getFieldName(field));
+  }
+
+  private getKanbanDefaultGroupFieldName(collection: any) {
+    return this.getKanbanGroupFieldCandidates(collection)
+      .map((field) => getFieldName(field))
+      .find(Boolean);
+  }
+
+  private getKanbanGroupField(collection: any, fieldName?: string) {
+    const normalizedFieldName = String(fieldName || '').trim();
+    if (!normalizedFieldName) {
+      return undefined;
+    }
+    return getCollectionFields(collection).find((field) => getFieldName(field) === normalizedFieldName);
+  }
+
+  private getKanbanCollectionOrThrow(actionName: string, resourceInit: Record<string, any>) {
+    const dataSourceKey = String(resourceInit?.dataSourceKey || 'main').trim() || 'main';
+    const collectionName = String(resourceInit?.collectionName || '').trim();
+    if (!collectionName) {
+      throwBadRequest(`flowSurfaces ${actionName} kanban block requires resource.collectionName`);
+    }
+    const collection = this.getCollection(dataSourceKey, collectionName);
+    if (!collection) {
+      throwBadRequest(`flowSurfaces ${actionName} kanban collection '${dataSourceKey}.${collectionName}' not found`);
+    }
+    return {
+      dataSourceKey,
+      collectionName,
+      collection,
+    };
+  }
+
+  private assertKanbanCollectionCompatible(actionName: string, resourceInit: Record<string, any>) {
+    const resolved = this.getKanbanCollectionOrThrow(actionName, resourceInit);
+    const filterTargetKey = this.getKanbanCollectionFilterTargetKey(resolved.collection);
+    if (!filterTargetKey) {
+      throwBadRequest(
+        `flowSurfaces ${actionName} kanban collection '${resolved.dataSourceKey}.${resolved.collectionName}' must declare filterTargetKey`,
+      );
+    }
+    const groupFieldCandidates = this.getKanbanGroupFieldCandidates(resolved.collection);
+    if (!groupFieldCandidates.length) {
+      throwBadRequest(
+        `flowSurfaces ${actionName} kanban collection '${resolved.dataSourceKey}.${resolved.collectionName}' must contain at least one supported grouping field`,
+      );
+    }
+    return {
+      ...resolved,
+      filterTargetKey,
+      groupFieldCandidates,
+    };
+  }
+
+  private getKanbanRelationTargetCollection(groupField: any, dataSourceKey: string) {
+    if (!this.isKanbanAssociationGroupField(groupField)) {
+      return null;
+    }
+    return resolveFieldTargetCollection(groupField, dataSourceKey, (nextDataSourceKey, collectionName) =>
+      this.getCollection(nextDataSourceKey, collectionName),
+    );
+  }
+
+  private getKanbanRelationFieldCandidateNames(groupField: any, dataSourceKey: string) {
+    const targetCollection = this.getKanbanRelationTargetCollection(groupField, dataSourceKey);
+    if (!targetCollection) {
+      return [];
+    }
+    return getCollectionFields(targetCollection)
+      .map((field) => getFieldName(field))
+      .filter(Boolean);
+  }
+
+  private getKanbanDefaultRelationTitleFieldName(groupField: any, dataSourceKey: string) {
+    const targetCollection = this.getKanbanRelationTargetCollection(groupField, dataSourceKey);
+    if (!targetCollection) {
+      return undefined;
+    }
+    return (
+      targetCollection?.titleField ||
+      targetCollection?.titleCollectionField?.name ||
+      this.getKanbanCollectionFilterTargetKey(targetCollection)
+    );
+  }
+
+  private assertKanbanRelationFieldBinding(input: {
+    actionName: string;
+    collectionName: string;
+    dataSourceKey: string;
+    groupField: any;
+    fieldName?: string;
+    kind: 'groupTitleField' | 'groupColorField';
+  }) {
+    const normalizedFieldName = String(input.fieldName || '').trim();
+    if (!normalizedFieldName) {
+      return;
+    }
+    const targetCollection = this.getKanbanRelationTargetCollection(input.groupField, input.dataSourceKey);
+    if (!targetCollection) {
+      throwBadRequest(
+        `flowSurfaces ${input.actionName} kanban ${input.kind} is only supported when groupField targets a relation`,
+      );
+    }
+    const field = resolveFieldFromCollection(targetCollection, normalizedFieldName);
+    if (!field) {
+      throwBadRequest(
+        `flowSurfaces ${input.actionName} kanban ${input.kind} '${normalizedFieldName}' does not exist in relation target collection for '${input.collectionName}'`,
+      );
+    }
+  }
+
+  private getKanbanGroupFieldSortScopeKeys(groupField: any) {
+    const groupFieldName = getFieldName(groupField);
+    if (!groupFieldName) {
+      return [];
+    }
+    if (!this.isKanbanAssociationGroupField(groupField) || !groupField?.foreignKey) {
+      return [groupFieldName];
+    }
+    return [...new Set([groupField.foreignKey, groupFieldName].filter(Boolean))];
+  }
+
+  private getKanbanCompatibleSortFieldNames(collection: any, groupField: any) {
+    const scopeKeys = new Set(this.getKanbanGroupFieldSortScopeKeys(groupField));
+    return getCollectionFields(collection)
+      .filter((field) => String(getFieldInterface(field) || '').trim() === 'sort')
+      .filter((field) => scopeKeys.has(String(field?.scopeKey || field?.options?.scopeKey || '').trim()))
+      .map((field) => getFieldName(field))
+      .filter(Boolean);
+  }
+
+  private resolveKanbanCompatibleSortFieldName(input: {
+    actionName: string;
+    collection: any;
+    groupField: any;
+    requested?: any;
+    allowEmpty?: boolean;
+  }) {
+    const normalizedRequested = this.normalizeKanbanFieldNameInput(input.requested, '', {
+      allowEmpty: input.allowEmpty,
+    });
+    if (_.isUndefined(normalizedRequested)) {
+      return undefined;
+    }
+    if (!normalizedRequested) {
+      return '';
+    }
+    const compatibleFieldNames = this.getKanbanCompatibleSortFieldNames(input.collection, input.groupField);
+    if (!compatibleFieldNames.includes(normalizedRequested)) {
+      throwBadRequest(
+        `flowSurfaces ${input.actionName} kanban dragSortBy '${normalizedRequested}' is not compatible with the current groupField`,
+      );
+    }
+    return normalizedRequested;
+  }
+
+  private normalizeKanbanGroupOptions(value: any, context: string) {
+    if (_.isUndefined(value)) {
+      return undefined;
+    }
+    if (_.isNull(value)) {
+      return [];
+    }
+    if (!Array.isArray(value)) {
+      throwBadRequest(`${context} must be an array`);
+    }
+    const seen = new Set<string>();
+    return value.map((item, index) => {
+      if (!_.isPlainObject(item)) {
+        throwBadRequest(`${context}[${index}] must be an object`);
+      }
+      const normalizedValue = String(item.value || '').trim();
+      if (!normalizedValue) {
+        throwBadRequest(`${context}[${index}].value is required`);
+      }
+      if (seen.has(normalizedValue)) {
+        throwBadRequest(`${context}[${index}].value '${normalizedValue}' is duplicated`);
+      }
+      seen.add(normalizedValue);
+      const label =
+        typeof item.label === 'string'
+          ? item.label.trim()
+          : typeof item.label === 'number' || typeof item.label === 'boolean'
+            ? String(item.label)
+            : normalizedValue;
+      const color =
+        typeof item.color === 'string'
+          ? item.color.trim() || undefined
+          : typeof item.color === 'number' || typeof item.color === 'boolean'
+            ? String(item.color)
+            : undefined;
+      return buildDefinedPayload({
+        value: normalizedValue,
+        label,
+        color,
+        ...(item.isUnknown === true ? { isUnknown: true } : {}),
+      });
+    });
+  }
+
+  private buildKanbanInlineGroupOptions(groupField: any) {
+    if (this.isKanbanAssociationGroupField(groupField)) {
+      return undefined;
+    }
+    const enumOptions = groupField?.uiSchema?.enum || groupField?.options?.uiSchema?.enum;
+    if (!Array.isArray(enumOptions)) {
+      return undefined;
+    }
+    return this.normalizeKanbanGroupOptions(
+      enumOptions.map((item: any) => ({
+        value: item?.value,
+        label: item?.label ?? item?.title ?? item?.uiSchema?.title ?? item?.name ?? item?.value,
+        color: item?.color,
+      })),
+      'flowSurfaces kanban inline groupOptions',
+    );
+  }
+
+  private mergeKanbanInlineGroupOptions(
+    inlineOptions: Array<Record<string, any>> | undefined,
+    configuredOptions: Array<Record<string, any>> | undefined,
+    context: string,
+  ) {
+    if (!inlineOptions?.length) {
+      return configuredOptions;
+    }
+    if (!configuredOptions?.length) {
+      return inlineOptions;
+    }
+    const inlineMap = new Map(inlineOptions.map((item) => [String(item.value), item]));
+    configuredOptions.forEach((item) => {
+      if (!inlineMap.has(String(item.value))) {
+        throwBadRequest(`${context} value '${item.value}' is not available on the current select groupField`);
+      }
+    });
+    return configuredOptions.map((item) => {
+      const inline = inlineMap.get(String(item.value));
+      return buildDefinedPayload({
+        ...inline,
+        ...item,
+        label: item.label || inline?.label || String(item.value),
+        color: item.color || inline?.color,
+      });
+    });
+  }
+
+  private normalizeKanbanPopupSettings(
+    actionKey: KanbanPopupActionKey,
+    popupSettings?: Record<string, any>,
+    blockUid?: string,
+  ) {
+    const nextParams = _.cloneDeep(popupSettings || {});
+    const actionUid = blockUid && actionKey ? this.getKanbanPopupActionUid(blockUid, actionKey) : undefined;
+    const popupTemplateUidProvided = Object.prototype.hasOwnProperty.call(nextParams, 'popupTemplateUid');
+    const popupTemplateUid =
+      typeof nextParams.popupTemplateUid === 'string'
+        ? nextParams.popupTemplateUid.trim()
+        : nextParams.popupTemplateUid;
+    if (
+      popupTemplateUidProvided &&
+      (popupTemplateUid === undefined || popupTemplateUid === null || popupTemplateUid === '')
+    ) {
+      delete nextParams.popupTemplateUid;
+      delete nextParams.popupTemplateContext;
+      delete nextParams.popupTemplateHasFilterByTk;
+      delete nextParams.popupTemplateHasSourceId;
+      delete nextParams.uid;
+    }
+    const normalizedUid = typeof nextParams.uid === 'string' ? nextParams.uid.trim() : nextParams.uid;
+    if (!normalizedUid || normalizedUid === blockUid || normalizedUid === actionUid) {
+      delete nextParams.uid;
+    } else {
+      nextParams.uid = normalizedUid;
+    }
+    if (typeof nextParams.mode === 'string') {
+      nextParams.mode = OPEN_VIEW_MODE_ALIASES[nextParams.mode] || nextParams.mode;
+    }
+    if (typeof nextParams.size === 'string' && !nextParams.size.trim()) {
+      delete nextParams.size;
+    }
+    if (typeof nextParams.pageModelClass === 'string' && !nextParams.pageModelClass.trim()) {
+      delete nextParams.pageModelClass;
+    }
+    return nextParams;
+  }
+
+  private getKanbanPopupActionUse(actionKey: KanbanPopupActionKey) {
+    return actionKey === 'quickCreateAction' ? 'KanbanQuickCreateActionModel' : 'KanbanCardViewActionModel';
+  }
+
+  private getKanbanPopupActionUid(kanbanUid: string, actionKey: KanbanPopupActionKey) {
+    return `${kanbanUid}${KANBAN_POPUP_ACTION_UID_SUFFIX_BY_KEY[actionKey]}`;
+  }
+
+  private getKanbanBlockResourceInit(blockNode: any) {
+    const resourceInit = _.cloneDeep(_.get(blockNode, ['stepParams', 'resourceSettings', 'init']) || {});
+    if (resourceInit.collectionName && !resourceInit.dataSourceKey) {
+      resourceInit.dataSourceKey = 'main';
+    }
+    return resourceInit;
+  }
+
+  private getKanbanPopupStoredSettings(blockNode: any, actionKey: KanbanPopupActionKey) {
+    const itemNode = getSingleNodeSubModel(blockNode?.subModels?.item);
+    const rawPopupSettings =
+      actionKey === 'quickCreateAction'
+        ? _.get(blockNode, ['stepParams', 'kanbanSettings', 'popup']) || {
+            mode: blockNode?.props?.popupMode,
+            size: blockNode?.props?.popupSize,
+            popupTemplateUid: blockNode?.props?.popupTemplateUid,
+            pageModelClass: blockNode?.props?.popupPageModelClass,
+            uid: blockNode?.props?.popupTargetUid,
+          }
+        : _.get(itemNode, ['stepParams', 'cardSettings', 'popup']) || {
+            mode: itemNode?.props?.openMode,
+            size: itemNode?.props?.popupSize,
+            popupTemplateUid: itemNode?.props?.popupTemplateUid,
+            pageModelClass: itemNode?.props?.pageModelClass,
+            uid: itemNode?.props?.popupTargetUid,
+          };
+    return this.normalizeKanbanPopupSettings(actionKey, rawPopupSettings, blockNode?.uid);
+  }
+
+  private buildKanbanPopupOpenView(input: {
+    blockNode: any;
+    actionKey: KanbanPopupActionKey;
+    resourceInit?: Record<string, any>;
+  }) {
+    const actionUid = this.getKanbanPopupActionUid(input.blockNode.uid, input.actionKey);
+    const resourceInit = input.resourceInit || this.getKanbanBlockResourceInit(input.blockNode);
+    const defaults = buildDefinedPayload({
+      mode: 'drawer',
+      size: 'medium',
+      pageModelClass: 'ChildPageModel',
+      uid: actionUid,
+      collectionName: resourceInit.collectionName,
+      dataSourceKey: resourceInit.dataSourceKey || (resourceInit.collectionName ? 'main' : undefined),
+    });
+    const current = this.getKanbanPopupStoredSettings(input.blockNode, input.actionKey);
+    return buildDefinedPayload({
+      ...defaults,
+      ...current,
+      uid: current.uid || defaults.uid,
+      collectionName: current.collectionName || defaults.collectionName,
+      dataSourceKey: current.dataSourceKey || defaults.dataSourceKey,
+    });
+  }
+
+  private async normalizeKanbanPopupConfigureValue(input: {
+    actionName: string;
+    blockUid: string;
+    actionKey: KanbanPopupActionKey;
+    value: any;
+    transaction?: any;
+  }) {
+    if (_.isUndefined(input.value)) {
+      return undefined;
+    }
+    if (_.isNull(input.value)) {
+      return {};
+    }
+    const actionUid = this.getKanbanPopupActionUid(input.blockUid, input.actionKey);
+    const normalized = await this.normalizeOpenView(input.actionName, input.value, {
+      transaction: input.transaction,
+      popupTemplateHostUid: actionUid,
+      popupActionContext: {
+        hasCurrentRecord: input.actionKey === 'cardViewAction',
+      },
+    });
+    return this.normalizeKanbanPopupSettings(input.actionKey, normalized || {}, input.blockUid);
+  }
+
+  private buildKanbanInitialBlockProps(input: {
+    actionName: string;
+    resourceInit: Record<string, any>;
+    props?: Record<string, any>;
+  }) {
+    const { collection, collectionName, dataSourceKey } = this.assertKanbanCollectionCompatible(
+      input.actionName,
+      input.resourceInit,
+    );
+    const currentProps = _.cloneDeep(input.props || {});
+    const defaultGroupFieldName = this.getKanbanDefaultGroupFieldName(collection);
+    const nextGroupFieldName = String(currentProps.groupField || defaultGroupFieldName || '').trim();
+    const nextGroupField = this.getKanbanGroupField(collection, nextGroupFieldName);
+    if (!nextGroupField || !this.isKanbanGroupField(nextGroupField)) {
+      throwBadRequest(
+        `flowSurfaces ${input.actionName} kanban collection '${dataSourceKey}.${collectionName}' must resolve a supported groupField`,
+      );
+    }
+    const configuredInlineGroupOptions = this.normalizeKanbanGroupOptions(
+      currentProps.groupOptions,
+      `flowSurfaces ${input.actionName} kanban groupOptions`,
+    );
+    const inlineGroupOptions = this.buildKanbanInlineGroupOptions(nextGroupField);
+    const nextGroupOptions = this.mergeKanbanInlineGroupOptions(
+      inlineGroupOptions,
+      configuredInlineGroupOptions,
+      `flowSurfaces ${input.actionName} kanban groupOptions`,
+    );
+    const nextDragSortBy = this.resolveKanbanCompatibleSortFieldName({
+      actionName: input.actionName,
+      collection,
+      groupField: nextGroupField,
+      requested: currentProps.dragSortBy,
+      allowEmpty: true,
+    });
+    const nextDragEnabled = currentProps.dragEnabled === true && !!nextDragSortBy;
+    const nextGroupTitleField = this.isKanbanAssociationGroupField(nextGroupField)
+      ? this.normalizeKanbanFieldNameInput(
+          currentProps.groupTitleField || this.getKanbanDefaultRelationTitleFieldName(nextGroupField, dataSourceKey),
+          `flowSurfaces ${input.actionName} kanban groupTitleField`,
+          { allowEmpty: true },
+        ) || undefined
+      : undefined;
+    const nextGroupColorField = this.isKanbanAssociationGroupField(nextGroupField)
+      ? this.normalizeKanbanFieldNameInput(
+          currentProps.groupColorField,
+          `flowSurfaces ${input.actionName} kanban groupColorField`,
+          { allowEmpty: true },
+        ) || undefined
+      : undefined;
+    if (nextGroupTitleField) {
+      this.assertKanbanRelationFieldBinding({
+        actionName: input.actionName,
+        collectionName,
+        dataSourceKey,
+        groupField: nextGroupField,
+        fieldName: nextGroupTitleField,
+        kind: 'groupTitleField',
+      });
+    }
+    if (nextGroupColorField) {
+      this.assertKanbanRelationFieldBinding({
+        actionName: input.actionName,
+        collectionName,
+        dataSourceKey,
+        groupField: nextGroupField,
+        fieldName: nextGroupColorField,
+        kind: 'groupColorField',
+      });
+    }
+
+    return buildDefinedPayload({
+      ...currentProps,
+      groupField: nextGroupFieldName,
+      groupTitleField: nextGroupTitleField,
+      groupColorField: nextGroupColorField,
+      groupOptions: nextGroupOptions,
+      styleVariant: currentProps.styleVariant || 'color',
+      quickCreateEnabled: currentProps.quickCreateEnabled === true,
+      dragEnabled: nextDragEnabled,
+      dragSortBy: nextDragSortBy || undefined,
+    });
+  }
+
   private normalizeCalendarFieldPathInput(value: any, context: string, options: { allowEmpty?: boolean } = {}) {
     if (_.isUndefined(value)) {
       return undefined;
@@ -15232,14 +16348,22 @@ export class FlowSurfacesService {
     }
 
     if (actionKey === 'quickCreateAction') {
-      if (nextParams.popupTemplateHasFilterByTk) {
+      const hasRecordScopedTemplate =
+        !!nextParams.popupTemplateHasFilterByTk ||
+        !!nextParams.popupTemplateHasSourceId ||
+        !_.isUndefined(nextParams.filterByTk) ||
+        !_.isUndefined(nextParams.sourceId) ||
+        !!String(nextParams.associationName || '').trim();
+      if (hasRecordScopedTemplate) {
         delete nextParams.popupTemplateUid;
         delete nextParams.popupTemplateContext;
         delete nextParams.popupTemplateHasFilterByTk;
         delete nextParams.popupTemplateHasSourceId;
         delete nextParams.uid;
       }
+      delete nextParams.associationName;
       delete nextParams.filterByTk;
+      delete nextParams.sourceId;
     }
 
     return nextParams;
@@ -15418,9 +16542,9 @@ export class FlowSurfacesService {
       return node;
     }
 
-    const current: any = node;
+    let current: any = node;
     if (current.use === 'CalendarBlockModel') {
-      return (await this.ensureCalendarBlockPopupHosts(current, transaction)) as T;
+      current = await this.ensureCalendarBlockPopupHosts(current, transaction);
     }
 
     for (const [subKey, value] of Object.entries(current.subModels || {})) {
@@ -15444,6 +16568,384 @@ export class FlowSurfacesService {
     }
 
     return current;
+  }
+
+  private projectCalendarBlockPopupHosts<T = any>(node: T): T {
+    if (!node || typeof node !== 'object') {
+      return node;
+    }
+
+    const current: any = node;
+    if (!current?.uid || current.use !== 'CalendarBlockModel') {
+      return node;
+    }
+
+    const resourceInit = this.getCalendarBlockResourceInit(current);
+    let nextSubModels = current.subModels;
+    let changed = false;
+
+    for (const actionKey of CALENDAR_POPUP_ACTION_KEYS) {
+      const existing = getSingleNodeSubModel(current.subModels?.[actionKey]);
+      const expectedUid = this.getCalendarPopupActionUid(current.uid, actionKey);
+      const expectedUse = this.getCalendarPopupActionUse(actionKey);
+      const openView = this.buildCalendarPopupOpenView({
+        blockNode: current,
+        actionKey,
+        resourceInit,
+      });
+      const currentOpenView = this.resolvePopupHostOpenView(existing);
+
+      if (existing?.uid === expectedUid && existing.use === expectedUse && _.isEqual(currentOpenView, openView)) {
+        continue;
+      }
+
+      const nextActionNode = {
+        ...(existing?.uid === expectedUid ? _.cloneDeep(existing) : {}),
+        uid: expectedUid,
+        use: expectedUse,
+        stepParams: _.merge({}, existing?.uid === expectedUid ? _.cloneDeep(existing.stepParams || {}) : {}, {
+          popupSettings: {
+            openView,
+          },
+        }),
+      };
+
+      if (!changed) {
+        nextSubModels = {
+          ...(current.subModels || {}),
+        };
+        changed = true;
+      }
+      nextSubModels[actionKey] = nextActionNode;
+    }
+
+    if (!changed) {
+      return node;
+    }
+
+    return {
+      ...current,
+      subModels: nextSubModels,
+    };
+  }
+
+  private projectCalendarBlockPopupHostsInTree<T = any>(node: T): T {
+    if (!node || typeof node !== 'object') {
+      return node;
+    }
+
+    let current: any = this.projectCalendarBlockPopupHosts(node);
+    let nextSubModels = current?.subModels;
+    let changed = current !== node;
+
+    if (!nextSubModels || typeof nextSubModels !== 'object') {
+      return current;
+    }
+
+    for (const [subKey, value] of Object.entries(nextSubModels)) {
+      if (Array.isArray(value)) {
+        const nextItems = [];
+        let itemsChanged = false;
+        for (const item of value) {
+          const nextItem = this.projectCalendarBlockPopupHostsInTree(item);
+          nextItems.push(nextItem);
+          itemsChanged = itemsChanged || nextItem !== item;
+        }
+        if (!itemsChanged) {
+          continue;
+        }
+        if (!changed) {
+          current = {
+            ...current,
+            subModels: {
+              ...nextSubModels,
+            },
+          };
+          nextSubModels = current.subModels;
+          changed = true;
+        }
+        nextSubModels[subKey] = nextItems;
+        continue;
+      }
+
+      const nextValue = this.projectCalendarBlockPopupHostsInTree(value);
+      if (nextValue === value) {
+        continue;
+      }
+      if (!changed) {
+        current = {
+          ...current,
+          subModels: {
+            ...nextSubModels,
+          },
+        };
+        nextSubModels = current.subModels;
+        changed = true;
+      }
+      nextSubModels[subKey] = nextValue;
+    }
+
+    return current;
+  }
+
+  private async ensureKanbanBlockPopupHosts(blockNode: any, transaction?: any) {
+    if (!blockNode?.uid || blockNode.use !== 'KanbanBlockModel') {
+      return blockNode;
+    }
+
+    const resourceInit = this.getKanbanBlockResourceInit(blockNode);
+    let changed = false;
+
+    for (const actionKey of KANBAN_POPUP_ACTION_KEYS) {
+      const existing = getSingleNodeSubModel(blockNode.subModels?.[actionKey]);
+      const expectedUid = this.getKanbanPopupActionUid(blockNode.uid, actionKey);
+      const expectedUse = this.getKanbanPopupActionUse(actionKey);
+      const openView = this.buildKanbanPopupOpenView({
+        blockNode,
+        actionKey,
+        resourceInit,
+      });
+      const currentOpenView = this.resolvePopupHostOpenView(existing);
+      const shouldReplaceExisting = existing?.uid && existing.uid !== expectedUid;
+      const shouldUpsert =
+        !existing?.uid ||
+        shouldReplaceExisting ||
+        existing.use !== expectedUse ||
+        !_.isEqual(currentOpenView, openView);
+
+      if (!shouldUpsert) {
+        continue;
+      }
+
+      if (shouldReplaceExisting) {
+        await this.removeNodeTreeWithBindings(existing.uid, transaction);
+      }
+
+      if (existing?.uid && existing.uid === expectedUid && !_.isEqual(currentOpenView, openView)) {
+        await this.reconcilePopupOpenViewTransition(expectedUid, currentOpenView, openView, transaction);
+      }
+
+      const nextActionNode = {
+        ...(existing?.uid && existing.uid === expectedUid ? _.cloneDeep(existing) : {}),
+        uid: expectedUid,
+        use: expectedUse,
+        stepParams: _.merge({}, existing?.uid === expectedUid ? _.cloneDeep(existing.stepParams || {}) : {}, {
+          popupSettings: {
+            openView,
+          },
+        }),
+      };
+
+      await this.repository.upsertModel(
+        {
+          parentId: blockNode.uid,
+          subKey: actionKey,
+          subType: 'object',
+          ...nextActionNode,
+        },
+        { transaction },
+      );
+      changed = true;
+    }
+
+    if (!changed) {
+      return blockNode;
+    }
+
+    return this.repository.findModelById(blockNode.uid, {
+      transaction,
+      includeAsyncNode: true,
+    });
+  }
+
+  private async ensureKanbanBlockPopupHostsInTree<T = any>(node: T, transaction?: any): Promise<T> {
+    if (!node || typeof node !== 'object') {
+      return node;
+    }
+
+    let current: any = node;
+    if (current.use === 'KanbanBlockModel') {
+      current = await this.ensureKanbanBlockPopupHosts(current, transaction);
+    }
+
+    for (const [subKey, value] of Object.entries(current.subModels || {})) {
+      if (Array.isArray(value)) {
+        const nextItems = [];
+        let changed = false;
+        for (const item of value) {
+          const nextItem = await this.ensureKanbanBlockPopupHostsInTree(item, transaction);
+          nextItems.push(nextItem);
+          changed = changed || nextItem !== item;
+        }
+        if (changed) {
+          current.subModels[subKey] = nextItems;
+        }
+        continue;
+      }
+      const nextValue = await this.ensureKanbanBlockPopupHostsInTree(value, transaction);
+      if (nextValue !== value) {
+        current.subModels[subKey] = nextValue;
+      }
+    }
+
+    return current;
+  }
+
+  private projectKanbanBlockPopupHosts<T = any>(node: T): T {
+    if (!node || typeof node !== 'object') {
+      return node;
+    }
+
+    const current: any = node;
+    if (!current?.uid || current.use !== 'KanbanBlockModel') {
+      return node;
+    }
+
+    const resourceInit = this.getKanbanBlockResourceInit(current);
+    let nextSubModels = current.subModels;
+    let changed = false;
+
+    for (const actionKey of KANBAN_POPUP_ACTION_KEYS) {
+      const existing = getSingleNodeSubModel(current.subModels?.[actionKey]);
+      const expectedUid = this.getKanbanPopupActionUid(current.uid, actionKey);
+      const expectedUse = this.getKanbanPopupActionUse(actionKey);
+      const openView = this.buildKanbanPopupOpenView({
+        blockNode: current,
+        actionKey,
+        resourceInit,
+      });
+      const currentOpenView = this.resolvePopupHostOpenView(existing);
+
+      if (existing?.uid === expectedUid && existing.use === expectedUse && _.isEqual(currentOpenView, openView)) {
+        continue;
+      }
+
+      const nextActionNode = {
+        ...(existing?.uid === expectedUid ? _.cloneDeep(existing) : {}),
+        uid: expectedUid,
+        use: expectedUse,
+        stepParams: _.merge({}, existing?.uid === expectedUid ? _.cloneDeep(existing.stepParams || {}) : {}, {
+          popupSettings: {
+            openView,
+          },
+        }),
+      };
+
+      if (!changed) {
+        nextSubModels = {
+          ...(current.subModels || {}),
+        };
+        changed = true;
+      }
+      nextSubModels[actionKey] = nextActionNode;
+    }
+
+    if (!changed) {
+      return node;
+    }
+
+    return {
+      ...current,
+      subModels: nextSubModels,
+    };
+  }
+
+  private projectKanbanBlockPopupHostsInTree<T = any>(node: T): T {
+    if (!node || typeof node !== 'object') {
+      return node;
+    }
+
+    let current: any = this.projectKanbanBlockPopupHosts(node);
+    let nextSubModels = current?.subModels;
+    let changed = current !== node;
+
+    if (!nextSubModels || typeof nextSubModels !== 'object') {
+      return current;
+    }
+
+    for (const [subKey, value] of Object.entries(nextSubModels)) {
+      if (Array.isArray(value)) {
+        const nextItems = [];
+        let itemsChanged = false;
+        for (const item of value) {
+          const nextItem = this.projectKanbanBlockPopupHostsInTree(item);
+          nextItems.push(nextItem);
+          itemsChanged = itemsChanged || nextItem !== item;
+        }
+        if (!itemsChanged) {
+          continue;
+        }
+        if (!changed) {
+          current = {
+            ...current,
+            subModels: {
+              ...nextSubModels,
+            },
+          };
+          nextSubModels = current.subModels;
+          changed = true;
+        }
+        nextSubModels[subKey] = nextItems;
+        continue;
+      }
+
+      const nextValue = this.projectKanbanBlockPopupHostsInTree(value);
+      if (nextValue === value) {
+        continue;
+      }
+      if (!changed) {
+        current = {
+          ...current,
+          subModels: {
+            ...nextSubModels,
+          },
+        };
+        nextSubModels = current.subModels;
+        changed = true;
+      }
+      nextSubModels[subKey] = nextValue;
+    }
+
+    return current;
+  }
+
+  private getCalendarSettingValue(node: any, propKey: string, stepParamsPath: string[]) {
+    if (_.has(node, ['props', propKey])) {
+      return _.get(node, ['props', propKey]);
+    }
+    return _.get(node, ['stepParams', ...stepParamsPath]);
+  }
+
+  private validateCalendarSettingValues(
+    actionName: string,
+    values: {
+      defaultView?: any;
+      quickCreateEvent?: any;
+      showLunar?: any;
+      weekStart?: any;
+    },
+  ) {
+    if (!_.isUndefined(values.defaultView)) {
+      const defaultView =
+        typeof values.defaultView === 'string' ? values.defaultView.trim() : String(values.defaultView || '').trim();
+      if (!CALENDAR_DEFAULT_VIEWS.has(defaultView)) {
+        throwBadRequest(`flowSurfaces ${actionName} calendar defaultView must be one of: month, week, day`);
+      }
+    }
+
+    if (!_.isUndefined(values.quickCreateEvent) && !_.isBoolean(values.quickCreateEvent)) {
+      throwBadRequest(`flowSurfaces ${actionName} calendar quickCreateEvent must be a boolean`);
+    }
+
+    if (!_.isUndefined(values.showLunar) && !_.isBoolean(values.showLunar)) {
+      throwBadRequest(`flowSurfaces ${actionName} calendar showLunar must be a boolean`);
+    }
+
+    if (!_.isUndefined(values.weekStart)) {
+      if (!Number.isInteger(values.weekStart) || !CALENDAR_WEEK_STARTS.has(values.weekStart)) {
+        throwBadRequest(`flowSurfaces ${actionName} calendar weekStart must be 0 or 1`);
+      }
+    }
   }
 
   private validateCalendarBlockState(actionName: string, node: any) {
@@ -15479,6 +16981,86 @@ export class FlowSurfacesService {
         collectionName,
         fieldPath,
         kind,
+      });
+    }
+
+    this.validateCalendarSettingValues(actionName, {
+      defaultView: this.getCalendarSettingValue(node, 'defaultView', [
+        'calendarSettings',
+        'defaultView',
+        'defaultView',
+      ]),
+      quickCreateEvent: this.getCalendarSettingValue(node, 'enableQuickCreateEvent', [
+        'calendarSettings',
+        'quickCreateEvent',
+        'enableQuickCreateEvent',
+      ]),
+      showLunar: this.getCalendarSettingValue(node, 'showLunar', ['calendarSettings', 'showLunar', 'showLunar']),
+      weekStart: this.getCalendarSettingValue(node, 'weekStart', ['calendarSettings', 'weekStart', 'weekStart']),
+    });
+  }
+
+  private validateKanbanBlockState(actionName: string, node: any) {
+    if (node?.use !== 'KanbanBlockModel') {
+      return;
+    }
+
+    const resourceInit = this.getKanbanBlockResourceInit(node);
+    const { collection, collectionName, dataSourceKey } = this.assertKanbanCollectionCompatible(
+      actionName,
+      resourceInit,
+    );
+    const groupFieldName =
+      String(node?.props?.groupField || this.getKanbanDefaultGroupFieldName(collection) || '').trim() || undefined;
+    const groupField = this.getKanbanGroupField(collection, groupFieldName);
+    if (!groupField || !this.isKanbanGroupField(groupField)) {
+      throwBadRequest(
+        `flowSurfaces ${actionName} kanban groupField '${groupFieldName || ''}' is not supported by KanbanBlockModel`,
+      );
+    }
+
+    if (this.isKanbanAssociationGroupField(groupField)) {
+      const groupTitleField =
+        this.normalizeKanbanFieldNameInput(node?.props?.groupTitleField, '', { allowEmpty: true }) || undefined;
+      const groupColorField =
+        this.normalizeKanbanFieldNameInput(node?.props?.groupColorField, '', { allowEmpty: true }) || undefined;
+      if (groupTitleField) {
+        this.assertKanbanRelationFieldBinding({
+          actionName,
+          collectionName,
+          dataSourceKey,
+          groupField,
+          fieldName: groupTitleField,
+          kind: 'groupTitleField',
+        });
+      }
+      if (groupColorField) {
+        this.assertKanbanRelationFieldBinding({
+          actionName,
+          collectionName,
+          dataSourceKey,
+          groupField,
+          fieldName: groupColorField,
+          kind: 'groupColorField',
+        });
+      }
+    }
+
+    const inlineGroupOptions = this.buildKanbanInlineGroupOptions(groupField);
+    if (Array.isArray(node?.props?.groupOptions)) {
+      this.mergeKanbanInlineGroupOptions(
+        inlineGroupOptions,
+        _.cloneDeep(node.props.groupOptions),
+        `flowSurfaces ${actionName} kanban groupOptions`,
+      );
+    }
+    if (node?.props?.dragSortBy) {
+      this.resolveKanbanCompatibleSortFieldName({
+        actionName,
+        collection,
+        groupField,
+        requested: node.props.dragSortBy,
+        allowEmpty: true,
       });
     }
   }
@@ -16263,7 +17845,11 @@ export class FlowSurfacesService {
     };
   }
 
-  private async loadResolvedNode(resolved: any, transaction?: any) {
+  private async loadResolvedNode(
+    resolved: any,
+    transaction?: any,
+    options: { persistCalendarPopupHosts?: boolean } = {},
+  ) {
     let node: any;
     if (resolved?.kind === 'page' && resolved?.pageRoute) {
       node = await this.routeSync.buildPageTree(resolved.pageRoute, transaction);
@@ -16274,7 +17860,13 @@ export class FlowSurfacesService {
     } else {
       node = await this.repository.findModelById(resolved.uid, { transaction, includeAsyncNode: true });
     }
-    return this.ensureCalendarBlockPopupHostsInTree(node, transaction);
+    if (options.persistCalendarPopupHosts === false) {
+      return this.projectKanbanBlockPopupHostsInTree(this.projectCalendarBlockPopupHostsInTree(node));
+    }
+    return this.ensureKanbanBlockPopupHostsInTree(
+      await this.ensureCalendarBlockPopupHostsInTree(node, transaction),
+      transaction,
+    );
   }
 
   private normalizePopupTreeShape<T = any>(node: T): T {

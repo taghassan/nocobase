@@ -1,26 +1,39 @@
 {
   "target": {
     "kind": "block",
-    "use": "CalendarBlockModel"
+    "use": "KanbanBlockModel"
   },
   "tree": {
-    "alias": "block.calendar1",
-    "use": "CalendarBlockModel",
+    "alias": "block.kanban1",
+    "use": "KanbanBlockModel",
     "props": {
-      "fieldNames": {
-        "title": "name",
-        "start": "createdAt",
-        "end": "lastVisitAt"
-      },
-      "defaultView": "month",
-      "enableQuickCreateEvent": true,
-      "weekStart": 1
+      "groupField": "status",
+      "groupOptions": [
+        {
+          "value": "todo",
+          "label": "To do",
+          "color": "blue"
+        },
+        {
+          "value": "doing",
+          "label": "Doing",
+          "color": "gold"
+        },
+        {
+          "value": "done",
+          "label": "Done",
+          "color": "green"
+        }
+      ],
+      "styleVariant": "color",
+      "quickCreateEnabled": false,
+      "dragEnabled": false
     },
     "stepParams": {
       "resourceSettings": {
         "init": {
           "dataSourceKey": "main",
-          "collectionName": "pets"
+          "collectionName": "kanban_tasks"
         }
       }
     },
@@ -61,34 +74,48 @@
           }
         }
       ],
-      "eventViewAction": [
+      "cardViewAction": [
         {
-          "alias": "action.calendarEventView1",
-          "use": "CalendarEventViewActionModel",
+          "alias": "action.kanbanCardView1",
+          "use": "KanbanCardViewActionModel",
           "stepParams": {
             "popupSettings": {
               "openView": {
                 "mode": "drawer",
                 "size": "medium",
                 "pageModelClass": "ChildPageModel",
-                "collectionName": "pets",
+                "collectionName": "kanban_tasks",
                 "dataSourceKey": "main"
               }
             }
           }
         }
       ],
+      "item": [
+        {
+          "alias": "node.KanbanCardItemModel1",
+          "use": "KanbanCardItemModel",
+          "subModels": {
+            "grid": [
+              {
+                "alias": "node.DetailsGridModel1",
+                "use": "DetailsGridModel"
+              }
+            ]
+          }
+        }
+      ],
       "quickCreateAction": [
         {
-          "alias": "action.calendarQuickCreate1",
-          "use": "CalendarQuickCreateActionModel",
+          "alias": "action.kanbanQuickCreate1",
+          "use": "KanbanQuickCreateActionModel",
           "stepParams": {
             "popupSettings": {
               "openView": {
                 "mode": "drawer",
                 "size": "medium",
                 "pageModelClass": "ChildPageModel",
-                "collectionName": "pets",
+                "collectionName": "kanban_tasks",
                 "dataSourceKey": "main"
               }
             }
@@ -100,7 +127,7 @@
   "pageRoute": {
     "alias": "page.route",
     "type": "flowPage",
-    "title": "Fixture Calendar Blocks",
+    "title": "Fixture Kanban Blocks",
     "icon": null,
     "options": null
   }

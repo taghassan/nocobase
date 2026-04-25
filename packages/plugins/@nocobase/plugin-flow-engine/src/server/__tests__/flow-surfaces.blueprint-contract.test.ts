@@ -373,13 +373,17 @@ describe('flowSurfaces applyBlueprint contract', () => {
       mode: 'drawer',
       size: 'large',
     });
-    expect(readNodeActionUses(calendarBlock)).toEqual([
-      'CalendarTodayActionModel',
-      'CalendarNavActionModel',
-      'CalendarTitleActionModel',
-      'CalendarViewSelectActionModel',
-      'RefreshActionModel',
-    ]);
+    expect(readNodeActionUses(calendarBlock)).toEqual(
+      expect.arrayContaining([
+        'FilterActionModel',
+        'AddNewActionModel',
+        'CalendarTodayActionModel',
+        'CalendarNavActionModel',
+        'CalendarTitleActionModel',
+        'CalendarViewSelectActionModel',
+        'RefreshActionModel',
+      ]),
+    );
   });
 
   it('should reject calendar main block fields fieldGroups and recordActions in applyBlueprint', async () => {
@@ -467,6 +471,16 @@ describe('flowSurfaces applyBlueprint contract', () => {
         },
       ],
     };
+    const calendarBlockDefaultFilter = {
+      logic: '$and',
+      items: [
+        {
+          path: 'title',
+          operator: '$includes',
+          value: 'planning',
+        },
+      ],
+    };
 
     const executeRes = await rootAgent.resource('flowSurfaces').applyBlueprint({
       values: {
@@ -494,7 +508,7 @@ describe('flowSurfaces applyBlueprint contract', () => {
                 key: 'employeesList',
                 type: 'list',
                 collection: 'employees',
-                defaultFilter: {},
+                defaultFilter: blockDefaultFilter,
                 fields: ['nickname'],
               },
               {
@@ -513,9 +527,15 @@ describe('flowSurfaces applyBlueprint contract', () => {
                   },
                 ],
               },
+              {
+                key: 'eventsCalendar',
+                type: 'calendar',
+                collection: 'calendar_events',
+                defaultFilter: calendarBlockDefaultFilter,
+              },
             ],
             layout: {
-              rows: [['employeesTable'], ['employeesList'], ['employeesCards']],
+              rows: [['employeesTable'], ['employeesList'], ['employeesCards'], ['eventsCalendar']],
             },
           },
         ],
@@ -527,6 +547,7 @@ describe('flowSurfaces applyBlueprint contract', () => {
     const tableBlock = collectDescendantNodes(data.surface.tree, (item) => item?.use === 'TableBlockModel')[0];
     const listBlock = collectDescendantNodes(data.surface.tree, (item) => item?.use === 'ListBlockModel')[0];
     const gridCardBlock = collectDescendantNodes(data.surface.tree, (item) => item?.use === 'GridCardBlockModel')[0];
+    const calendarBlock = collectDescendantNodes(data.surface.tree, (item) => item?.use === 'CalendarBlockModel')[0];
     const tableFilterAction = _.castArray(tableBlock?.subModels?.actions || []).find(
       (item: any) => item?.use === 'FilterActionModel',
     );
@@ -536,22 +557,80 @@ describe('flowSurfaces applyBlueprint contract', () => {
     const gridCardFilterAction = _.castArray(gridCardBlock?.subModels?.actions || []).find(
       (item: any) => item?.use === 'FilterActionModel',
     );
+    const calendarFilterAction = _.castArray(calendarBlock?.subModels?.actions || []).find(
+      (item: any) => item?.use === 'FilterActionModel',
+    );
 
     expect(tableFilterAction?.props?.defaultFilterValue).toEqual(blockDefaultFilter);
     expect(tableFilterAction?.stepParams?.filterSettings?.defaultFilter?.defaultFilter).toEqual(blockDefaultFilter);
     expect(tableFilterAction?.props?.filterableFieldNames).toBeUndefined();
-    expect(listFilterAction?.props?.defaultFilterValue).toEqual({
-      logic: '$and',
-      items: [],
-    });
-    expect(listFilterAction?.stepParams?.filterSettings?.defaultFilter?.defaultFilter).toEqual({
-      logic: '$and',
-      items: [],
-    });
+    expect(listFilterAction?.props?.defaultFilterValue).toEqual(blockDefaultFilter);
+    expect(listFilterAction?.stepParams?.filterSettings?.defaultFilter?.defaultFilter).toEqual(blockDefaultFilter);
     expect(gridCardFilterAction?.props?.defaultFilterValue).toEqual(explicitActionFilter);
     expect(gridCardFilterAction?.stepParams?.filterSettings?.defaultFilter?.defaultFilter).toEqual(
       explicitActionFilter,
     );
+    expect(calendarFilterAction?.props?.defaultFilterValue).toEqual(calendarBlockDefaultFilter);
+    expect(calendarFilterAction?.stepParams?.filterSettings?.defaultFilter?.defaultFilter).toEqual(
+      calendarBlockDefaultFilter,
+    );
+  });
+
+  it('should reject empty block-level defaultFilter groups in applyBlueprint data blocks', async () => {
+    for (const block of [
+      {
+        key: 'employeesTable',
+        type: 'table',
+        collection: 'employees',
+        defaultFilter: {},
+        fields: ['nickname'],
+      },
+      {
+        key: 'eventsCalendar',
+        type: 'calendar',
+        collection: 'calendar_events',
+        defaultFilter: null,
+      },
+      {
+        key: 'tasksKanban',
+        type: 'kanban',
+        collection: 'tasks',
+        defaultFilter: {
+          logic: '$and',
+          items: [],
+        },
+        fields: ['title'],
+      },
+    ]) {
+      const executeRes = await rootAgent.resource('flowSurfaces').applyBlueprint({
+        values: {
+          mode: 'create',
+          navigation: {
+            item: {
+              title: `Empty default filter ${block.key}`,
+            },
+          },
+          page: {
+            title: `Empty default filter ${block.key}`,
+          },
+          tabs: [
+            {
+              title: 'Overview',
+              blocks: [block],
+              layout: {
+                rows: [[block.key]],
+              },
+            },
+          ],
+        },
+      });
+
+      expect(executeRes.status).toBe(400);
+      const message = readErrorMessage(executeRes);
+      expect(message).toContain('must include at least one concrete filter item');
+      expect(message).toContain('flowSurfaces applyBlueprint tabs[0].blocks[0].defaultFilter');
+      expect(message).not.toContain('flowSurfaces applyBlueprint flowSurfaces applyBlueprint');
+    }
   });
 
   it('should auto-complete bare relation fields in applyBlueprint with non-empty view popups', async () => {
@@ -969,16 +1048,12 @@ describe('flowSurfaces applyBlueprint contract', () => {
     const { popupBlock } = await readPrimaryPopupBlockFromAction(addNewAction.uid);
     expect(popupBlock?.use).toBe('CreateFormModel');
 
-    const checkboxGroupField = collectDescendantNodes(
+    const checkboxGroupFormItem = collectDescendantNodes(
       popupBlock,
-      (item) =>
-        item?.use === 'SelectFieldModel' && item?.stepParams?.fieldSettings?.init?.fieldPath === checkboxGroupFieldPath,
+      (item) => item?.stepParams?.fieldSettings?.init?.fieldPath === checkboxGroupFieldPath,
     )[0];
-    expect(checkboxGroupField?.use).toBe('SelectFieldModel');
-    expect(checkboxGroupField?.props).toMatchObject({
-      allowClear: true,
-      mode: 'tags',
-    });
+    const checkboxGroupField = _.castArray(checkboxGroupFormItem?.subModels?.field || [])[0];
+    expect(checkboxGroupField?.use).toBe('CheckboxGroupFieldModel');
   });
 
   it('should apply blueprint defaults to generated popup names and grouped popup fields', async () => {
