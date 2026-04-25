@@ -123,11 +123,24 @@ async function listEnabledPlugins(ctx, lane: PluginClientLane = 'client') {
   return arr;
 }
 
-function normalizePmPluginKeys(filterByTk: string): string[] {
-  return filterByTk
-    .split(',')
-    .map((k) => k.trim())
-    .filter(Boolean);
+function normalizePmPluginKeys(filterByTk: unknown): string[] {
+  if (typeof filterByTk === 'string') {
+    return filterByTk
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean);
+  }
+
+  if (!Array.isArray(filterByTk) || filterByTk.some((item) => typeof item !== 'string')) {
+    return [];
+  }
+
+  return filterByTk.flatMap((item) =>
+    item
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean),
+  );
 }
 
 /** Query/body values often arrive as strings (`"true"`, `"1"`). */
@@ -227,9 +240,6 @@ export default {
     async enable(ctx, next) {
       const { filterByTk, awaitResponse: awaitResponseRaw } = ctx.action.params;
       const app = ctx.app as Application;
-      if (filterByTk == null || filterByTk === '' || typeof filterByTk !== 'string') {
-        ctx.throw(400, 'plugin name invalid');
-      }
       const keys = normalizePmPluginKeys(filterByTk);
       if (!keys.length) {
         ctx.throw(400, 'plugin name invalid');
@@ -249,9 +259,6 @@ export default {
     async disable(ctx, next) {
       const { filterByTk, awaitResponse: awaitResponseRaw } = ctx.action.params;
       const app = ctx.app as Application;
-      if (filterByTk == null || filterByTk === '' || typeof filterByTk !== 'string') {
-        ctx.throw(400, 'plugin name invalid');
-      }
       const keys = normalizePmPluginKeys(filterByTk);
       if (!keys.length) {
         ctx.throw(400, 'plugin name invalid');
