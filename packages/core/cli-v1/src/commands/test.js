@@ -11,6 +11,46 @@ const { Command } = require('commander');
 const { run, checkDBDialect } = require('../util');
 const path = require('path');
 
+function stripSingleThreadArgs(argv) {
+  const nextArgv = [];
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+
+    if (token === '--single-thread') {
+      const next = argv[index + 1];
+      if (next && !next.startsWith('-')) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (token.startsWith('--single-thread=')) {
+      continue;
+    }
+
+    nextArgv.push(token);
+  }
+
+  return nextArgv;
+}
+
+function requiresNoNodeSnapshot(nodeVersion = process.versions.node) {
+  const major = Number.parseInt(String(nodeVersion).split('.')[0], 10);
+  return Number.isFinite(major) && major >= 20;
+}
+
+function buildVitestNodeArgs(argv, nodeVersion = process.versions.node) {
+  const cliArgs = ['--max_old_space_size=14096', './node_modules/vitest/vitest.mjs', ...stripSingleThreadArgs(argv)];
+
+  // `isolated-vm` requires `--no-node-snapshot` on Node 20+.
+  if (requiresNoNodeSnapshot(nodeVersion)) {
+    cliArgs.unshift('--no-node-snapshot');
+  }
+
+  return cliArgs;
+}
+
 /**
  *
  * @param {String} name
@@ -65,28 +105,24 @@ function addTestCommand(name, cli) {
         process.argv.push('--poolOptions.threads.singleThread=true');
       }
 
-      if (opts.singleThread === 'false') {
-        process.argv.splice(process.argv.indexOf('--single-thread=false'), 1);
-      }
-
-      const cliArgs = ['--max_old_space_size=14096', './node_modules/vitest/vitest.mjs', ...process.argv.slice(3)];
+      const cliArgs = buildVitestNodeArgs(process.argv.slice(3));
 
       if (process.argv.includes('-h') || process.argv.includes('--help')) {
-        await run('node', cliArgs);
+        await run(process.execPath, cliArgs);
         return;
       }
 
       if (process.env.TEST_ENV) {
         console.log('process.env.TEST_ENV', process.env.TEST_ENV, cliArgs);
-        await run('node', cliArgs);
+        await run(process.execPath, cliArgs);
       } else {
         await Promise.all([
-          run('node', cliArgs, {
+          run(process.execPath, cliArgs, {
             env: {
               TEST_ENV: 'client-side',
             },
           }),
-          run('node', cliArgs, {
+          run(process.execPath, cliArgs, {
             env: {
               TEST_ENV: 'server-side',
             },
@@ -104,4 +140,10 @@ module.exports = (cli) => {
   addTestCommand('test:server', cli);
   addTestCommand('test:client', cli);
   addTestCommand('test', cli).option('--client').option('--server');
+};
+
+module.exports._test = {
+  stripSingleThreadArgs,
+  requiresNoNodeSnapshot,
+  buildVitestNodeArgs,
 };

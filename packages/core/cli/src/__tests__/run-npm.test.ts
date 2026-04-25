@@ -10,8 +10,8 @@
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { test } from 'vitest';
-import { run } from '../lib/run-npm.js';
+import { afterEach, expect, test, vi } from 'vitest';
+import { resolveProjectCwd, run } from '../lib/run-npm.js';
 
 test('run preserves arguments containing spaces', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'nocobase-cli-run-'));
@@ -26,6 +26,34 @@ test('run preserves arguments containing spaces', async () => {
 
   try {
     await run(process.execPath, [script, 'INIT_ROOT_NICKNAME=Super Admin']);
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true });
+  }
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+test('resolveProjectCwd walks up parent directories to find a NocoBase project root', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'nocobase-cli-project-'));
+  const projectRoot = path.join(dir, 'app2', 'source');
+  const nestedCwd = path.join(projectRoot, 'packages', 'core', 'cli');
+  const marker = path.join(projectRoot, 'node_modules', '.bin', 'nocobase-v1');
+
+  try {
+    await fsp.mkdir(path.dirname(marker), { recursive: true });
+    await fsp.mkdir(nestedCwd, { recursive: true });
+    await fsp.writeFile(marker, '');
+
+    vi.stubGlobal('process', {
+      ...process,
+      cwd: vi.fn(() => nestedCwd),
+    });
+
+    expect(resolveProjectCwd('./app2/source')).toBe(projectRoot);
+    expect(resolveProjectCwd('')).toBe(nestedCwd);
+    expect(resolveProjectCwd('   ')).toBe(nestedCwd);
   } finally {
     await fsp.rm(dir, { recursive: true, force: true });
   }

@@ -7,19 +7,74 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
+/**
+ * This file is part of the NocoBase (R) project.
+ * Copyright (c) 2020-2024 NocoBase Co., Ltd.
+ * Authors: NocoBase Team.
+ *
+ * This project is dual-licensed under AGPL-3.0 and NocoBase Commercial License.
+ * For more information, please refer to: https://www.nocobase.com/agreement.
+ */
+
+import fs from 'node:fs';
+import type { ChildProcess } from 'node:child_process';
 import path from 'node:path';
 import spawn from 'cross-spawn';
+
+const FORWARDED_SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
 
 function resolveCommandName(name: string): string {
   return name;
 }
 
-function resolveCwd(cwd?: string): string {
+function pathExists(candidate: string): boolean {
+  try {
+    return Boolean(candidate) && fs.statSync(candidate) !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+function hasLocalNocoBaseBinary(candidate: string): boolean {
+  return (
+    pathExists(path.join(candidate, 'node_modules', '.bin', 'nocobase-v1'))
+    || pathExists(path.join(candidate, 'node_modules', '.bin', 'nocobase-v1.cmd'))
+  );
+}
+
+export function resolveCwd(cwd?: string): string {
   const next = cwd ?? process.cwd();
   if (path.isAbsolute(next)) {
     return next;
   }
   return path.resolve(process.cwd(), next);
+}
+
+export function resolveProjectCwd(cwd?: string): string {
+  const normalizedCwd = typeof cwd === 'string' && cwd.trim() === '' ? undefined : cwd;
+  const next = normalizedCwd ?? process.cwd();
+  const resolvedNext = resolveCwd(normalizedCwd);
+
+  if (!normalizedCwd || path.isAbsolute(next)) {
+    return resolvedNext;
+  }
+
+  const baseCwd = process.cwd();
+  let current = baseCwd;
+  const fallback = resolvedNext;
+
+  while (true) {
+    const candidate = path.resolve(current, next);
+    if (hasLocalNocoBaseBinary(candidate)) {
+      return candidate;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) {
+      return fallback;
+    }
+    current = parent;
+  }
 }
 
 export function run(
@@ -40,8 +95,13 @@ export function run(
       },
       windowsHide: process.platform === 'win32',
     });
-    child.once('error', reject);
+    const cleanupSignalForwarding = forwardSignalsToChild(child);
+    child.once('error', (error) => {
+      cleanupSignalForwarding();
+      reject(error);
+    });
     child.once('close', (code, signal) => {
+      cleanupSignalForwarding();
       if (code === 0) {
         resolve();
         return;
@@ -53,6 +113,38 @@ export function run(
       reject(new Error(`${label} exited with code ${code}`));
     });
   });
+}
+
+function forwardSignalsToChild(child: ChildProcess): () => void {
+  let forwardedSignalCount = 0;
+  const listeners = new Map<NodeJS.Signals, () => void>();
+  const isChildRunning = () => child.exitCode === null && child.signalCode === null;
+
+  for (const signal of FORWARDED_SIGNALS) {
+    const listener = () => {
+      if (!isChildRunning()) {
+        return;
+      }
+
+      const nextSignal: NodeJS.Signals = forwardedSignalCount > 0 ? 'SIGKILL' : signal;
+      forwardedSignalCount += 1;
+
+      try {
+        child.kill(nextSignal);
+      } catch {
+        // Ignore kill errors here and let the child close/error handlers surface the failure.
+      }
+    };
+
+    listeners.set(signal, listener);
+    process.on(signal, listener);
+  }
+
+  return () => {
+    for (const [signal, listener] of listeners) {
+      process.off(signal, listener);
+    }
+  };
 }
 
 export function commandSucceeds(
@@ -134,16 +226,14 @@ export function runNocoBaseCommand(
   args: string[],
   options?: { stdio?: 'inherit' | 'pipe' | 'ignore'; cwd?: string; env?: Record<string, string> },
 ): Promise<void> {
-  let cwd = options?.cwd ?? process.cwd();
-  if (!path.isAbsolute(cwd)) {
-    cwd = path.resolve(process.cwd(), cwd);
-  }
+  const cwd = resolveProjectCwd(options?.cwd);
   const localBin = path.join(cwd, 'node_modules', '.bin');
-  return run('node', ['./node_modules/.bin/nocobase-v1', ...args], {
+  return run('nocobase-v1', [...args], {
     ...options,
+    cwd,
     errorName: 'nocobase command',
     env: {
-      PATH: `${localBin}${path.delimiter}${process.env.PATH}`,
+      PATH: `${localBin}${path.delimiter}${process.env.PATH ?? ''}`,
       ...options?.env,
     },
   });
