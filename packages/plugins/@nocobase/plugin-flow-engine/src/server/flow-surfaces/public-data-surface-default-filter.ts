@@ -11,7 +11,14 @@ import _ from 'lodash';
 import { throwBadRequest } from './errors';
 import { FLOW_SURFACE_FILTER_GROUP_EXAMPLE, normalizeFlowSurfaceFilterGroupValue } from './filter-group';
 
-export const FLOW_SURFACE_PUBLIC_DATA_SURFACE_BLOCK_TYPES = new Set(['table', 'list', 'gridCard']);
+export const FLOW_SURFACE_PUBLIC_DATA_SURFACE_BLOCK_TYPES = new Set([
+  'table',
+  'list',
+  'gridCard',
+  'calendar',
+  'kanban',
+]);
+export const FLOW_SURFACE_PUBLIC_DATA_SURFACE_BLOCK_TYPE_LABEL = 'table/list/gridCard/calendar/kanban';
 
 export function isFlowSurfacePublicDataSurfaceBlockType(blockType?: string) {
   return FLOW_SURFACE_PUBLIC_DATA_SURFACE_BLOCK_TYPES.has(String(blockType || '').trim());
@@ -30,15 +37,55 @@ export function normalizeFlowSurfacePublicBlockDefaultFilter(
     return undefined;
   }
 
-  const fieldPath = options.path ? `${options.path}.defaultFilter` : 'defaultFilter';
+  const fieldPath = buildFlowSurfaceDefaultFilterFieldPath(actionName, options.path);
   if (!isFlowSurfacePublicDataSurfaceBlockType(options.blockType) || !_.isUndefined(options.template)) {
-    throwBadRequest(`flowSurfaces ${actionName} ${fieldPath} is only supported on direct table/list/gridCard blocks`);
+    throwBadRequest(
+      `flowSurfaces ${actionName} ${fieldPath} is only supported on direct ${FLOW_SURFACE_PUBLIC_DATA_SURFACE_BLOCK_TYPE_LABEL} blocks`,
+    );
   }
 
-  return normalizeFlowSurfaceFilterGroupValue(
+  const normalized = normalizeFlowSurfaceFilterGroupValue(
     defaultFilter,
     `flowSurfaces ${actionName} ${fieldPath} expects FilterGroup like ${FLOW_SURFACE_FILTER_GROUP_EXAMPLE}`,
   );
+  return normalized;
+}
+
+export function assertFlowSurfaceConcreteDefaultFilterItem(
+  actionName: string,
+  defaultFilter: any,
+  options: {
+    path?: string;
+  } = {},
+) {
+  const fieldPath = buildFlowSurfaceDefaultFilterFieldPath(actionName, options.path);
+  if (!hasConcreteFlowSurfaceFilterItem(defaultFilter)) {
+    throwBadRequest(
+      `flowSurfaces ${actionName} ${fieldPath} must include at least one concrete filter item; empty defaultFilter groups such as {}, null, or { logic, items: [] } are not allowed`,
+    );
+  }
+}
+
+function buildFlowSurfaceDefaultFilterFieldPath(actionName: string, path?: string) {
+  if (!path) {
+    return 'defaultFilter';
+  }
+
+  const prefix = `flowSurfaces ${actionName} `;
+  const normalizedPath = path.startsWith(prefix) ? path.slice(prefix.length) : path;
+  return normalizedPath.endsWith('.defaultFilter') ? normalizedPath : `${normalizedPath}.defaultFilter`;
+}
+
+function hasConcreteFlowSurfaceFilterItem(filter: any): boolean {
+  if (!_.isPlainObject(filter) || !Array.isArray(filter.items)) {
+    return false;
+  }
+  return filter.items.some((item: any) => {
+    if (_.isPlainObject(item) && 'logic' in item && 'items' in item) {
+      return hasConcreteFlowSurfaceFilterItem(item);
+    }
+    return _.isPlainObject(item) && typeof item.path === 'string' && typeof item.operator === 'string';
+  });
 }
 
 export function backfillFlowSurfaceDefaultFilterSetting(settings: any, defaultFilter: any) {

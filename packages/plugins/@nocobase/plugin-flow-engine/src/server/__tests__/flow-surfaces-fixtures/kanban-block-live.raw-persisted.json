@@ -1,34 +1,49 @@
 {
   "target": {
-    "locator": {
-      "uid": "fcal9b1ock1"
+    "uid": "fkanban9ock1",
+    "kind": "block",
+    "node": {
+      "uid": "fkanban9ock1",
+      "use": "KanbanBlockModel"
     },
-    "uid": "fcal9b1ock1",
-    "kind": "block"
+    "pageSchemaUid": "kanbanfixturepage",
+    "tabSchemaUid": "kanbanfixturetab"
   },
   "tree": {
-    "uid": "fcal9b1ock1",
-    "use": "CalendarBlockModel",
+    "uid": "fkanban9ock1",
+    "use": "KanbanBlockModel",
     "props": {
-      "fieldNames": {
-        "id": "id",
-        "title": "name",
-        "start": "createdAt",
-        "end": "lastVisitAt"
-      },
-      "defaultView": "month",
-      "enableQuickCreateEvent": true,
-      "weekStart": 1
+      "groupField": "status",
+      "groupOptions": [
+        {
+          "value": "todo",
+          "label": "To do",
+          "color": "blue"
+        },
+        {
+          "value": "doing",
+          "label": "Doing",
+          "color": "gold"
+        },
+        {
+          "value": "done",
+          "label": "Done",
+          "color": "green"
+        }
+      ],
+      "styleVariant": "color",
+      "quickCreateEnabled": false,
+      "dragEnabled": false
     },
     "stepParams": {
       "resourceSettings": {
         "init": {
           "dataSourceKey": "main",
-          "collectionName": "pets"
+          "collectionName": "kanban_tasks"
         }
       }
     },
-    "parentId": "calendarfixturegrid",
+    "parentId": "kanbanfixturegrid",
     "subKey": "items",
     "subType": "array",
     "sortIndex": 1,
@@ -36,9 +51,9 @@
     "subModels": {
       "actions": [
         {
-          "uid": "fcal9b1ock1-filterAction",
+          "uid": "fkanban9ock1-filterAction",
           "use": "FilterActionModel",
-          "parentId": "fcal9b1ock1",
+          "parentId": "fkanban9ock1",
           "subKey": "actions",
           "subType": "array",
           "sortIndex": 1,
@@ -51,9 +66,9 @@
           }
         },
         {
-          "uid": "fcal9b1ock1-addNewAction",
+          "uid": "fkanban9ock1-addNewAction",
           "use": "AddNewActionModel",
-          "parentId": "fcal9b1ock1",
+          "parentId": "fkanban9ock1",
           "subKey": "actions",
           "subType": "array",
           "sortIndex": 2,
@@ -67,9 +82,9 @@
           }
         },
         {
-          "uid": "fcal9b1ock1-refreshAction",
+          "uid": "fkanban9ock1-refreshAction",
           "use": "RefreshActionModel",
-          "parentId": "fcal9b1ock1",
+          "parentId": "fkanban9ock1",
           "subKey": "actions",
           "subType": "array",
           "sortIndex": 3,
@@ -82,31 +97,32 @@
           }
         }
       ],
-      "eventViewAction": {
-        "uid": "fcal9b1ock1-eventViewAction",
-        "use": "CalendarEventViewActionModel",
-        "parentId": "fcal9b1ock1",
-        "subKey": "eventViewAction",
+      "item": {
+        "uid": "fkanban9ock1-item",
+        "use": "KanbanCardItemModel",
+        "parentId": "fkanban9ock1",
+        "subKey": "item",
         "subType": "object",
         "sortIndex": 1,
         "flowRegistry": {},
-        "stepParams": {
-          "popupSettings": {
-            "openView": {
-              "mode": "drawer",
-              "size": "medium",
-              "pageModelClass": "ChildPageModel",
-              "uid": "fcal9b1ock1-eventViewAction",
-              "collectionName": "pets",
-              "dataSourceKey": "main"
-            }
+        "stepParams": {},
+        "subModels": {
+          "grid": {
+            "uid": "fkanban9ock1-grid",
+            "use": "DetailsGridModel",
+            "parentId": "fkanban9ock1-item",
+            "subKey": "grid",
+            "subType": "object",
+            "sortIndex": 1,
+            "flowRegistry": {},
+            "stepParams": {}
           }
         }
       },
       "quickCreateAction": {
-        "uid": "fcal9b1ock1-quickCreateAction",
-        "use": "CalendarQuickCreateActionModel",
-        "parentId": "fcal9b1ock1",
+        "uid": "fkanban9ock1-quick-create-action",
+        "use": "KanbanQuickCreateActionModel",
+        "parentId": "fkanban9ock1",
         "subKey": "quickCreateAction",
         "subType": "object",
         "sortIndex": 1,
@@ -117,8 +133,29 @@
               "mode": "drawer",
               "size": "medium",
               "pageModelClass": "ChildPageModel",
-              "uid": "fcal9b1ock1-quickCreateAction",
-              "collectionName": "pets",
+              "uid": "fkanban9ock1-quick-create-action",
+              "collectionName": "kanban_tasks",
+              "dataSourceKey": "main"
+            }
+          }
+        }
+      },
+      "cardViewAction": {
+        "uid": "fkanban9ock1-card-view-action",
+        "use": "KanbanCardViewActionModel",
+        "parentId": "fkanban9ock1",
+        "subKey": "cardViewAction",
+        "subType": "object",
+        "sortIndex": 1,
+        "flowRegistry": {},
+        "stepParams": {
+          "popupSettings": {
+            "openView": {
+              "mode": "drawer",
+              "size": "medium",
+              "pageModelClass": "ChildPageModel",
+              "uid": "fkanban9ock1-card-view-action",
+              "collectionName": "kanban_tasks",
               "dataSourceKey": "main"
             }
           }
@@ -126,63 +163,18 @@
       }
     }
   },
-  "nodeMap": {
-    "fcal9b1ock1": {
-      "uid": "fcal9b1ock1",
-      "use": "CalendarBlockModel",
-      "props": {
-        "fieldNames": {
-          "id": "id",
-          "title": "name",
-          "start": "createdAt",
-          "end": "lastVisitAt"
-        },
-        "defaultView": "month",
-        "enableQuickCreateEvent": true,
-        "weekStart": 1
-      },
-      "stepParams": {
-        "resourceSettings": {
-          "init": {
-            "dataSourceKey": "main",
-            "collectionName": "pets"
-          }
-        }
-      }
-    },
-    "fcal9b1ock1-filterAction": {
-      "uid": "fcal9b1ock1-filterAction",
-      "use": "FilterActionModel"
-    },
-    "fcal9b1ock1-addNewAction": {
-      "uid": "fcal9b1ock1-addNewAction",
-      "use": "AddNewActionModel"
-    },
-    "fcal9b1ock1-refreshAction": {
-      "uid": "fcal9b1ock1-refreshAction",
-      "use": "RefreshActionModel"
-    },
-    "fcal9b1ock1-eventViewAction": {
-      "uid": "fcal9b1ock1-eventViewAction",
-      "use": "CalendarEventViewActionModel"
-    },
-    "fcal9b1ock1-quickCreateAction": {
-      "uid": "fcal9b1ock1-quickCreateAction",
-      "use": "CalendarQuickCreateActionModel"
-    }
-  },
   "pageRoute": {
     "id": 355813771010048,
     "parentId": 336550660341760,
-    "title": "Fixture Calendar Blocks",
+    "title": "Fixture Kanban Blocks",
     "tooltip": null,
     "icon": null,
-    "schemaUid": "calendarfixturepage",
-    "menuSchemaUid": "calendarfixturemenu",
+    "schemaUid": "kanbanfixturepage",
+    "menuSchemaUid": "kanbanfixturemenu",
     "tabSchemaName": null,
     "type": "flowPage",
     "options": null,
-    "sort": 19,
+    "sort": 20,
     "hideInMenu": null,
     "enableTabs": false,
     "enableHeader": null,
@@ -195,9 +187,9 @@
         "title": null,
         "tooltip": null,
         "icon": null,
-        "schemaUid": "calendarfixturetab",
+        "schemaUid": "kanbanfixturetab",
         "menuSchemaUid": null,
-        "tabSchemaName": "calendarfixturetabschema",
+        "tabSchemaName": "kanbanfixturetabschema",
         "type": "tabs",
         "options": null,
         "sort": 1,
