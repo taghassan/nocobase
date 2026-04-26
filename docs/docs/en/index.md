@@ -34,7 +34,7 @@ features:
     details: An AI-powered new way to get started - use natural language to build, use, and develop.
     items:
       - title: Quick Start
-        details: Install NocoBase CLI and configure AI Skills, preparing for AI building, using, and developing NocoBase.
+        details: Install NocoBase CLI, configure AI Skills, and connect your AI Agent, preparing for AI building, using, and developing NocoBase.
         link: /ai/quick-start
       - title: AI Builder
         details: Build NocoBase applications from scratch with AI, covering the full process from data modeling, UI configuration, workflows to release management.

@@ -34,7 +34,7 @@ features:
     details: AI 驱动的全新上手方式——用自然语言完成搭建、使用和开发。
     items:
       - title: 快速开始
-        details: 安装 NocoBase CLI 并配置 AI Skills，为 AI 搭建、使用和开发 NocoBase 做好准备。
+        details: 安装 NocoBase CLI 以及配置 AI Skills，并连接 AI Agent，为 AI 搭建、使用和开发 NocoBase 做好准备。
         link: /ai/quick-start
       - title: AI 搭建
         details: 用 AI 从零搭建 NocoBase 应用，覆盖数据建模、界面配置、工作流到发布管理的全流程。

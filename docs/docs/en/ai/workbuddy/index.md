@@ -85,7 +85,7 @@ WorkBuddy is currently under rapid iteration, and some features may change. It i
 Copy the prompt below to WorkBuddy, and it will automatically complete NocoBase CLI installation, initialization, and environment configuration:
 
 ```
-Help me install NocoBase CLI: https://docs.nocobase.com/en/ai/ai-quick-start.md
+Help me install NocoBase CLI and complete initialization: https://docs.nocobase.com/en/ai/ai-quick-start.md (please read the linked content directly)
 ```
 
 ### Manual Installation

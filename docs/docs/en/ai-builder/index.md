@@ -17,7 +17,7 @@ If you have already installed the [NocoBase CLI](../ai/quick-start.md), you can 
 Copy the following prompt to your AI assistant (Claude Code, Codex, Cursor, Trae, etc.) to automatically complete the installation and configuration:
 
 ```
-Help me install NocoBase CLI: https://docs.nocobase.com/en/ai/ai-quick-start.md
+Help me install NocoBase CLI and complete initialization: https://docs.nocobase.com/en/ai/ai-quick-start.md (please read the linked content directly)
 ```
 
 ### Manual Installation

@@ -9,7 +9,7 @@ features:
     details: Install CLI, connect your app, start building — everything starts here.
     items:
       - title: Quick Start
-        details: Install NocoBase CLI and configure AI Skills to get ready for AI building, usage, and development with NocoBase.
+        details: Install NocoBase CLI, configure AI Skills, and connect your AI Agent to get ready for AI building, usage, and development with NocoBase.
         link: /ai/quick-start
       - title: AI Building
         details: Build NocoBase applications from scratch with AI, covering the entire process from data modeling and UI configuration to workflows and release management.
