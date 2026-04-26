@@ -15,13 +15,12 @@ sidebar: false
 
 确认用户已安装以下依赖：
 
-- **Node.js >= 22**（运行 `node -v` 检查）。如果当前版本低于 22：
-  1. 先检查用户系统中是否已安装 Node 版本管理工具（依次运行 `nvm --version`、`fnm --version`、`volta --version`）
-  2. 如果检测到其中任一工具，直接用它切换到 Node.js 22（例如 `nvm install 22 && nvm use 22`、`fnm install 22 && fnm use 22`、`volta install node@22`）
-  3. 如果没有版本管理工具，引导用户通过 [Node.js 官网](https://nodejs.org/) 下载安装 Node.js >= 22
+- **Node.js >= 22**（运行 `node -v` 检查）
 - **Yarn 1.x**（运行 `yarn -v` 检查）。如果没有，通过 `npm install -g yarn` 安装
 - **Git**（运行 `git --version` 检查）。如果没有，通过 [Git 官网](https://git-scm.com/) 安装
-- **Docker**（如果用户需要用 Docker 方式安装 NocoBase）。运行 `docker -v` 检查，如果没有，引导用户通过 [Docker 官网](https://www.docker.com/get-started/) 安装
+- **Docker**（如果用户需要用 Docker 方式安装 NocoBase）。运行 `docker -v` 检查，如果没有，并且用户需要使用 Docker，则引导用户通过 [Docker 官网](https://www.docker.com/get-started/) 安装，否则跳过。
+
+如果前置环境不满足，告诉用户需要先安装缺失的依赖，并提供安装链接和简单的安装指导。确认所有前置环境都满足后，继续下一步安装 CLI。
 
 ## Step 2：安装 CLI
 
