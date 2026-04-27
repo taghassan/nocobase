@@ -133,6 +133,7 @@ nb install --env app1 --resume
 | `nb download` | `nb init` 或 `nb upgrade` 会使用的高级命令，用于从 Docker、npm 或 Git 获取 NocoBase。通常很少直接使用。 |
 | `nb start` | 启动选中的本地应用或 Docker 容器。 |
 | `nb stop` | 停止选中的本地应用或 Docker 容器。 |
+| `nb restart` | 先停止，再启动选中的本地应用或 Docker 容器。 |
 | `nb dev` | 为 npm/Git 源码 env 启动开发模式。 |
 | `nb logs` | 查看 npm/Git 或 Docker env 的应用日志。 |
 | `nb ps` | 查看已配置 env 的运行状态。 |
@@ -147,6 +148,7 @@ nb install --env app1 --resume
 
 ```bash
 nb start --env app1
+nb restart --env app1
 nb logs --env app1
 nb ps --env app1
 nb db ps --env app1
@@ -156,6 +158,7 @@ nb db ps --env app1
 
 ```bash
 nb start -e app1
+nb restart -e app1
 nb logs -e app1
 nb upgrade -e app1
 nb db start -e app1
@@ -170,6 +173,7 @@ Docker env 会通过已保存的 Docker 容器和镜像进行管理：
 ```bash
 nb init --env app1 --yes --source docker --version alpha
 nb start --env app1
+nb restart --env app1
 nb logs --env app1
 nb stop --env app1
 ```
