@@ -138,6 +138,7 @@ In non-interactive mode, pass these setup-only flags again because they are not 
 | `nb download` | Advanced command used by `nb init` or `nb upgrade` to fetch NocoBase from Docker, npm, or Git. It is rarely used directly. |
 | `nb start` | Start the selected local app or Docker container. |
 | `nb stop` | Stop the selected local app or Docker container. |
+| `nb restart` | Stop, then start the selected local app or Docker container. |
 | `nb dev` | Run development mode for npm/Git source envs. |
 | `nb logs` | Show app logs for npm/Git or Docker envs. |
 | `nb ps` | Show runtime status for configured envs. |
@@ -154,6 +155,7 @@ Recommended style: use `--env` explicitly for app/runtime commands. `-e` is the 
 
 ```bash
 nb start --env app1
+nb restart --env app1
 nb logs --env app1
 nb ps --env app1
 nb db ps --env app1
@@ -163,6 +165,7 @@ Equivalent shorthand examples:
 
 ```bash
 nb start -e app1
+nb restart -e app1
 nb logs -e app1
 nb upgrade -e app1
 nb db start -e app1
@@ -206,6 +209,7 @@ Docker envs are managed through saved Docker containers and images:
 ```bash
 nb init --env app1 --yes --source docker --version alpha
 nb start --env app1
+nb restart --env app1
 nb logs --env app1
 nb stop --env app1
 ```
