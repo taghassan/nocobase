@@ -53,7 +53,7 @@ nb init
 nb init --ui
 ```
 
-`nb init` 可以连接已有的 NocoBase 应用，也可以安装一个新的 NocoBase 应用。创建新应用时，还可以为当前工作区安装 NocoBase AI coding skills (`nocobase/skills`)。
+`nb init` 可以连接已有的 NocoBase 应用，也可以安装一个新的 NocoBase 应用。创建新应用时，还可以全局安装 NocoBase AI coding skills (`nocobase/skills`)。
 
 ### 非交互式初始化
 
@@ -202,7 +202,7 @@ nb dev --env app1
 如果要连接已有应用，可以运行 `nb init` 并选择已有应用流程，也可以直接添加 env：
 
 ```bash
-nb env add app1 --base-url http://localhost:13000/api
+nb env add app1 --api-base-url http://localhost:13000/api
 ```
 
 `nb env add` 会在需要时自动进入认证流程。

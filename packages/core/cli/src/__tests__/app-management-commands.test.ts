@@ -10,6 +10,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { afterEach, beforeEach, test, vi, expect } from 'vitest';
+import { resolveCliHomeRoot } from '../lib/cli-home.js';
 
 const TEST_CWD = '/tmp/app2';
 const TEST_STORAGE_PATH = path.join(TEST_CWD, 'storage', 'test');
@@ -773,10 +774,10 @@ test('logs explains when the requested env does not exist', async () => {
   await expect((() => Logs.prototype.run.call(command))()).rejects.toThrow(/Env "local53" is not configured in this workspace\..*run `nb init --env local53` first\./s);
 });
 
-test('logs explains remote envs do not have local runtime logs', async () => {
+test('logs explains http envs do not have local runtime logs', async () => {
   const { default: Logs } = await import('../commands/logs.js');
   mocks.resolveManagedAppRuntime.mockResolvedValue({
-    kind: 'remote',
+    kind: 'http',
     envName: 'remote',
     source: undefined,
     env: {},
@@ -836,7 +837,7 @@ test('ps lists all configured env runtime statuses', async () => {
       };
     }
     return {
-      kind: 'remote',
+      kind: 'http',
       envName: 'remote',
       source: undefined,
       env: {
@@ -864,13 +865,13 @@ test('ps lists all configured env runtime statuses', async () => {
   expect(mocks.listEnvs.mock.calls).toEqual([[]]);
   expect(mocks.resolveManagedAppRuntime.mock.calls).toEqual([['docker'], ['local'], ['remote']]);
   expect(mocks.buildDockerDbContainerName.mock.calls[0]).toEqual(['docker', 'postgres', 'nb-demo']);
-  expect(mocks.renderTable.mock.calls[0]?.[0]).toEqual(['Env', 'Source', 'App', 'Database', 'URL']);
+  expect(mocks.renderTable.mock.calls[0]?.[0]).toEqual(['Env', 'Kind', 'Status', 'Database', 'URL']);
   expect(mocks.renderTable.mock.calls[0]?.[1]).toEqual([
     ['docker', 'docker', 'running', 'stopped', 'http://127.0.0.1:13000'],
-    ['local', 'npm', 'running', '-', 'http://127.0.0.1:13001'],
-    ['remote', 'remote', 'remote', 'external', 'https://demo.example.com'],
+    ['local', 'local', 'running', '-', 'http://127.0.0.1:13001'],
+    ['remote', 'http', 'http', 'external', 'https://demo.example.com'],
   ]);
-  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toMatch(/Env\|Source\|App\|Database\|URL/);
+  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toMatch(/Env\|Kind\|Status\|Database\|URL/);
 });
 
 test('ps supports --env without listing all envs first', async () => {
@@ -967,7 +968,7 @@ test('db ps lists all configured database runtime statuses', async () => {
       };
     }
     return {
-      kind: 'remote',
+      kind: 'http',
       envName: 'remote',
       source: undefined,
       env: {
@@ -991,7 +992,7 @@ test('db ps lists all configured database runtime statuses', async () => {
   expect(mocks.renderTable.mock.calls[0]?.[1]).toEqual([
     ['docker', 'builtin', 'postgres', 'running', 'nb-demo-docker-postgres:5432'],
     ['local', 'external', 'postgres', 'external', '127.0.0.1:5432'],
-    ['remote', 'remote', 'mysql', 'remote', ''],
+    ['remote', 'http', 'mysql', 'http', ''],
   ]);
 });
 
@@ -1684,6 +1685,10 @@ test('down confirms before removing user data', async () => {
   expect(mocks.confirmAction.mock.calls.length).toBe(1);
   expect(String(mocks.confirmAction.mock.calls[0]?.[0] ?? '')).toMatch(/Delete storage and managed database data/);
   expect(mocks.run.mock.calls.length).toBe(0);
+  expect(mocks.fsRm.mock.calls.at(-1)).toEqual([
+    path.resolve(resolveCliHomeRoot(), './docker-local/storage'),
+    { recursive: true, force: true },
+  ]);
   expect(mocks.succeedTask.mock.calls.some((call) =>
       String(call[0]).includes('Storage and managed database data deleted'),
     )).toBe(true);
@@ -1745,10 +1750,10 @@ test('down refuses to remove data without confirmation in non-interactive mode',
   expect(mocks.run.mock.calls.length).toBe(0);
 });
 
-test('down explains remote envs do not have local runtime resources', async () => {
+test('down explains http envs do not have local runtime resources', async () => {
   const { default: Down } = await import('../commands/down.js');
   mocks.resolveManagedAppRuntime.mockResolvedValue({
-    kind: 'remote',
+    kind: 'http',
     envName: 'remote',
     source: undefined,
     env: {
@@ -2265,10 +2270,10 @@ test('dev rejects docker envs with source-oriented guidance', async () => {
   expect(mocks.runLocalNocoBaseCommand.mock.calls.length).toBe(0);
 });
 
-test('dev rejects remote envs because they have no local source directory', async () => {
+test('dev rejects http envs because they have no local source directory', async () => {
   const { default: Dev } = await import('../commands/dev.js');
   mocks.resolveManagedAppRuntime.mockResolvedValue({
-    kind: 'remote',
+    kind: 'http',
     envName: 'remote',
     source: undefined,
     env: {},
@@ -2296,10 +2301,10 @@ test('dev explains when the requested env does not exist', async () => {
   await expect((() => Dev.prototype.run.call(command))()).rejects.toThrow(/Env "local53" is not configured in this workspace\..*run `nb init --env local53` first\./s);
 });
 
-test('pm list keeps API fallback for remote envs', async () => {
+test('pm list keeps API fallback for http envs', async () => {
   const { default: PmList } = await import('../commands/pm/list.js');
   mocks.resolveManagedAppRuntime.mockResolvedValue({
-    kind: 'remote',
+    kind: 'http',
     envName: 'remote',
     source: undefined,
     env: {},
