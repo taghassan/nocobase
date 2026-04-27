@@ -34,6 +34,14 @@ export type FlowSurfaceComposeNormalizedFieldSpec = {
   associationPathName?: string;
   renderer?: string;
   type?: string;
+  fieldType?: string;
+  fields?: string[];
+  selectorFields?: string[];
+  titleField?: string;
+  openMode?: string;
+  popupSize?: string;
+  pageSize?: number;
+  showIndex?: boolean;
   target?: string | Record<string, unknown>;
   settings?: FlowSurfaceComposeObject;
   popup?: FlowSurfaceComposeObject;
@@ -243,6 +251,14 @@ function buildComposeFieldCreatePayload(fieldSpec: FlowSurfaceComposeNormalizedF
     ...(fieldSpec.associationPathName ? { associationPathName: fieldSpec.associationPathName } : {}),
     ...(fieldSpec.renderer ? { renderer: fieldSpec.renderer } : {}),
     ...(fieldSpec.type ? { type: fieldSpec.type } : {}),
+    ...(fieldSpec.fieldType ? { fieldType: fieldSpec.fieldType } : {}),
+    ...(typeof fieldSpec.fields !== 'undefined' ? { fields: fieldSpec.fields } : {}),
+    ...(typeof fieldSpec.selectorFields !== 'undefined' ? { selectorFields: fieldSpec.selectorFields } : {}),
+    ...(fieldSpec.titleField ? { titleField: fieldSpec.titleField } : {}),
+    ...(fieldSpec.openMode ? { openMode: fieldSpec.openMode } : {}),
+    ...(fieldSpec.popupSize ? { popupSize: fieldSpec.popupSize } : {}),
+    ...(typeof fieldSpec.pageSize !== 'undefined' ? { pageSize: fieldSpec.pageSize } : {}),
+    ...(typeof fieldSpec.showIndex !== 'undefined' ? { showIndex: fieldSpec.showIndex } : {}),
     ...(fieldSpec.popup ? { popup: fieldSpec.popup } : {}),
     ...(fieldSpec.__autoPopupForRelationField ? { __autoPopupForRelationField: true } : {}),
     ...(fieldSpec[FLOW_SURFACE_APPLY_BLUEPRINT_POPUP_DEFAULTS_KEY]
