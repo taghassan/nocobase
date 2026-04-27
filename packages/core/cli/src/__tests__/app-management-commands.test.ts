@@ -652,6 +652,48 @@ test('stop shows product-style local failure guidance', async () => {
   ]);
 });
 
+test('restart runs stop before start and forwards startup flags', async () => {
+  const { default: Restart } = await import('../commands/restart.js');
+  const runCommand = vi.fn(async () => undefined);
+  const command = createCommandHarness({
+    flags: {
+      env: 'local',
+      quickstart: true,
+      port: '14000',
+      daemon: false,
+      instances: 2,
+      'launch-mode': 'pm2',
+      verbose: true,
+    },
+  }, runCommand);
+  command.argv = ['--no-daemon'];
+
+  await Restart.prototype.run.call(command);
+
+  expect(runCommand.mock.calls).toEqual([
+    ['stop', ['--env', 'local', '--verbose']],
+    ['start', ['--env', 'local', '--verbose', '--quickstart', '--port', '14000', '--no-daemon', '--instances', '2', '--launch-mode', 'pm2']],
+  ]);
+});
+
+test('restart does not forward default daemon flag unless the user provides it', async () => {
+  const { default: Restart } = await import('../commands/restart.js');
+  const runCommand = vi.fn(async () => undefined);
+  const command = createCommandHarness({
+    flags: {
+      env: 'docker-local',
+      daemon: true,
+    },
+  }, runCommand);
+
+  await Restart.prototype.run.call(command);
+
+  expect(runCommand.mock.calls).toEqual([
+    ['stop', ['--env', 'docker-local']],
+    ['start', ['--env', 'docker-local']],
+  ]);
+});
+
 test('logs supports --env and --no-follow for local app logs', async () => {
   const { default: Logs } = await import('../commands/logs.js');
   mocks.resolveManagedAppRuntime.mockResolvedValue({
