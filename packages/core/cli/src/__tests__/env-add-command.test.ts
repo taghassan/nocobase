@@ -7,7 +7,7 @@
  * For more information, please refer to: https://www.nocobase.com/agreement.
  */
 
-import { test, vi, expect } from 'vitest';
+import { beforeEach, test, vi, expect } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   runPromptCatalog: vi.fn(),
@@ -40,11 +40,14 @@ vi.mock('@clack/prompts', () => ({
   outro: mocks.outro,
 }));
 
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 test('env add saves builtinDb into env config when provided by install', async () => {
   const { default: EnvAdd } = await import('../commands/env/add.js');
   mocks.runPromptCatalog.mockResolvedValue({
     name: 'local',
-    scope: 'project',
     apiBaseUrl: 'http://127.0.0.1:13000/api',
     authType: 'token',
     accessToken: 'token-123',
@@ -56,7 +59,6 @@ test('env add saves builtinDb into env config when provided by install', async (
     parse: vi.fn(async () => ({
       args: { name: 'local' },
       flags: {
-        scope: 'project',
         verbose: false,
         'api-base-url': 'http://127.0.0.1:13000/api',
         'auth-type': 'token',
@@ -84,7 +86,8 @@ test('env add saves builtinDb into env config when provided by install', async (
   expect(mocks.upsertEnv.mock.calls[0]).toEqual([
     'local',
     {
-      baseUrl: 'http://127.0.0.1:13000/api',
+      kind: 'docker',
+      apiBaseUrl: 'http://127.0.0.1:13000/api',
       source: 'docker',
       downloadVersion: 'alpha',
       dockerRegistry: 'nocobase/nocobase',
@@ -98,9 +101,49 @@ test('env add saves builtinDb into env config when provided by install', async (
       builtinDbImage: 'registry.example.com/postgres:16',
       accessToken: 'token-123',
     },
-    { scope: 'project' },
+    { scope: 'global' },
   ]);
   expect(runCommand.mock.calls).toEqual([
+    ['env:update', ['local']],
+  ]);
+});
+
+test('env add stores config globally by default', async () => {
+  const { default: EnvAdd } = await import('../commands/env/add.js');
+  mocks.runPromptCatalog.mockResolvedValue({
+    name: 'local',
+    apiBaseUrl: 'http://127.0.0.1:13000/api',
+    authType: 'oauth',
+  });
+  mocks.upsertEnv.mockResolvedValue(undefined);
+
+  const runCommand = vi.fn(async () => undefined);
+  const command = Object.assign(Object.create(EnvAdd.prototype), {
+    parse: vi.fn(async () => ({
+      args: { name: 'local' },
+      flags: {
+        verbose: false,
+        'api-base-url': 'http://127.0.0.1:13000/api',
+        'auth-type': 'oauth',
+      },
+    })),
+    config: {
+      runCommand,
+    },
+  });
+
+  await EnvAdd.prototype.run.call(command);
+
+  expect(mocks.upsertEnv.mock.calls[0]).toEqual([
+    'local',
+    {
+      kind: 'http',
+      apiBaseUrl: 'http://127.0.0.1:13000/api',
+    },
+    { scope: 'global' },
+  ]);
+  expect(runCommand.mock.calls).toEqual([
+    ['env:auth', ['local']],
     ['env:update', ['local']],
   ]);
 });

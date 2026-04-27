@@ -31,6 +31,11 @@ import {
   translateCli,
 } from '../lib/cli-locale.ts';
 import {
+  resolveConfiguredEnvPath,
+  resolveDefaultConfigScope,
+  resolveEnvRelativePath,
+} from '../lib/cli-home.js';
+import {
   findAvailableTcpPort,
   validateAvailableTcpPort,
   validateTcpPort,
@@ -77,7 +82,6 @@ const DEFAULT_INSTALL_ROOT_USERNAME = 'nocobase';
 const DEFAULT_INSTALL_ROOT_EMAIL = 'admin@nocobase.com';
 const DEFAULT_INSTALL_ROOT_PASSWORD = 'admin123';
 const DEFAULT_INSTALL_ROOT_NICKNAME = 'Super Admin';
-const CONFIG_SCOPE = 'project' as const;
 const APP_HEALTH_CHECK_INTERVAL_MS = 2_000;
 const APP_HEALTH_CHECK_TIMEOUT_MS = 600_000;
 const APP_HEALTH_CHECK_REQUEST_TIMEOUT_MS = 5_000;
@@ -165,6 +169,12 @@ function argvHasToken(argv: string[], tokens: string[]): boolean {
 
 function isInstallDbDialect(value: string): value is (typeof INSTALL_DB_DIALECTS)[number] {
   return (INSTALL_DB_DIALECTS as readonly string[]).includes(value);
+}
+
+function downloadVersionPromptValue(version: string): 'latest' | 'beta' | 'alpha' | 'other' {
+  return version === 'latest' || version === 'beta' || version === 'alpha'
+    ? version
+    : 'other';
 }
 
 function supportsBuiltinDbDialect(
@@ -465,6 +475,7 @@ export default class Install extends Command {
       required: false,
     }),
     'builtin-db': Flags.boolean({
+      allowNo: true,
       description:
         'Create and connect a CLI-managed built-in database for the app',
       default: false,
@@ -754,7 +765,7 @@ export default class Install extends Command {
       preset.fetchSource = flags['fetch-source'];
     }
 
-    if (argvHasToken(argv, ['--builtin-db'])) {
+    if (argvHasToken(argv, ['--builtin-db', '--no-builtin-db'])) {
       preset.builtinDb = flags['builtin-db'];
     }
 
@@ -775,6 +786,7 @@ export default class Install extends Command {
       const v = String(flags['db-host'] ?? '').trim();
       if (v) {
         preset.dbHost = v;
+        preset.builtinDb = false;
       }
     }
     if (flags['db-port'] !== undefined) {
@@ -881,7 +893,14 @@ export default class Install extends Command {
 
     const downloadPreset: PromptInitialValues = {
       ...(source ? { source } : {}),
-      ...(downloadVersion ? { version: downloadVersion } : {}),
+      ...(downloadVersion
+        ? {
+            version: downloadVersionPromptValue(downloadVersion),
+            ...(downloadVersionPromptValue(downloadVersion) === 'other'
+              ? { otherVersion: downloadVersion }
+              : {}),
+          }
+        : {}),
       ...(dockerRegistry ? { dockerRegistry } : {}),
       ...(dockerPlatform ? { dockerPlatform } : {}),
       ...(gitUrl ? { gitUrl } : {}),
@@ -953,7 +972,7 @@ export default class Install extends Command {
       return undefined;
     }
 
-    const env = await getEnv(parsed.env, { scope: CONFIG_SCOPE });
+    const env = await getEnv(parsed.env, { scope: resolveDefaultConfigScope() });
     if (!env) {
       throw new Error(formatMissingManagedAppEnvMessage(parsed.env));
     }
@@ -1107,7 +1126,7 @@ export default class Install extends Command {
    * Explicit download flags win; otherwise `-y` falls back to the docker + alpha quickstart path.
    */
   private static buildDownloadPresetValuesForInstall(
-    flags: DownloadParsedFlags,
+    flags: DownloadParsedFlags & Pick<InstallParsedFlags, 'resume'>,
     appResults: Record<string, PromptValue>,
     envName: string,
     yes: boolean,
@@ -1124,7 +1143,11 @@ export default class Install extends Command {
     }
 
     if (flags.version !== undefined) {
-      preset.version = String(flags.version).trim() || 'latest';
+      const version = String(flags.version).trim() || 'latest';
+      preset.version = downloadVersionPromptValue(version);
+      if (preset.version === 'other') {
+        preset.otherVersion = version;
+      }
     }
 
     if (flags['docker-registry'] !== undefined) {
@@ -1160,7 +1183,9 @@ export default class Install extends Command {
         typeof flags['npm-registry'] === 'string' ? flags['npm-registry'] : '';
     }
 
-    if (argvHasToken(argv, ['--replace', '-r'])) {
+    if (flags.resume && !argvHasToken(argv, ['--replace', '-r'])) {
+      preset.replace = true;
+    } else if (argvHasToken(argv, ['--replace', '-r'])) {
       preset.replace = flags.replace;
     }
 
@@ -1218,7 +1243,7 @@ export default class Install extends Command {
   private static async ensureWorkspaceName(): Promise<string> {
     return await ensureWorkspaceName(
       Install.defaultWorkspaceName(),
-      { scope: CONFIG_SCOPE },
+      { scope: resolveDefaultConfigScope() },
     );
   }
 
@@ -1317,9 +1342,13 @@ export default class Install extends Command {
             : containerName
         );
 
+    const storagePath =
+      resolveConfiguredEnvPath(params.storagePath)
+      ?? resolveEnvRelativePath(defaultInstallStoragePath(params.envName));
+
     if (dbDialect === 'postgres') {
       const image = String(params.builtinDbImage ?? '').trim() || defaultBuiltinDbImageForDialect(dbDialect);
-      const dataDir = path.resolve(params.storagePath, 'db', 'postgres');
+      const dataDir = path.resolve(storagePath, 'db', 'postgres');
       const args = [
         'run',
         '-d',
@@ -1370,7 +1399,7 @@ export default class Install extends Command {
 
     if (dbDialect === 'mysql') {
       const image = String(params.builtinDbImage ?? '').trim() || defaultBuiltinDbImageForDialect(dbDialect);
-      const dataDir = path.resolve(params.storagePath, 'db', 'mysql');
+      const dataDir = path.resolve(storagePath, 'db', 'mysql');
       const dbUser = String(params.dbUser ?? DEFAULT_INSTALL_DB_USER).trim() || DEFAULT_INSTALL_DB_USER;
       const dbDatabase = String(params.dbDatabase ?? defaultDbDatabase).trim() || defaultDbDatabase;
       const dbPassword = String(params.dbPassword ?? DEFAULT_INSTALL_DB_PASSWORD) || DEFAULT_INSTALL_DB_PASSWORD;
@@ -1420,7 +1449,7 @@ export default class Install extends Command {
 
     if (dbDialect === 'mariadb') {
       const image = String(params.builtinDbImage ?? '').trim() || defaultBuiltinDbImageForDialect(dbDialect);
-      const dataDir = path.resolve(params.storagePath, 'db', 'mariadb');
+      const dataDir = path.resolve(storagePath, 'db', 'mariadb');
       const dbUser = String(params.dbUser ?? DEFAULT_INSTALL_DB_USER).trim() || DEFAULT_INSTALL_DB_USER;
       const dbDatabase = String(params.dbDatabase ?? defaultDbDatabase).trim() || defaultDbDatabase;
       const dbPassword = String(params.dbPassword ?? DEFAULT_INSTALL_DB_PASSWORD) || DEFAULT_INSTALL_DB_PASSWORD;
@@ -1470,7 +1499,7 @@ export default class Install extends Command {
 
     if (dbDialect === 'kingbase') {
       const image = String(params.builtinDbImage ?? '').trim() || defaultBuiltinDbImageForDialect(dbDialect);
-      const dataDir = path.resolve(params.storagePath, 'db', 'kingbase');
+      const dataDir = path.resolve(storagePath, 'db', 'kingbase');
       const dbUser = String(params.dbUser ?? DEFAULT_INSTALL_DB_USER).trim() || DEFAULT_INSTALL_DB_USER;
       const dbDatabase = String(params.dbDatabase ?? defaultDbDatabase).trim() || defaultDbDatabase;
       const dbPassword = String(params.dbPassword ?? DEFAULT_INSTALL_DB_PASSWORD) || DEFAULT_INSTALL_DB_PASSWORD;
@@ -1658,13 +1687,13 @@ export default class Install extends Command {
 
     p.log.step(`Preparing built-in ${plan.dbDialect} database`);
     await this.ensureDockerNetwork(plan.networkName);
-    await this.removeDockerContainerIfForced({
+    const existingContainerKept = await this.removeDockerContainerIfForced({
       containerName: plan.containerName,
       displayName: `built-in ${plan.dbDialect} container`,
       force: params.force,
     });
 
-    if (Install.shouldPublishBuiltinDbPort(params.downloadResults.source)) {
+    if (!existingContainerKept && Install.shouldPublishBuiltinDbPort(params.downloadResults.source)) {
       const portError = await validateAvailableTcpPort(plan.dbPort);
       if (portError) {
         throw new Error(
@@ -1698,10 +1727,11 @@ export default class Install extends Command {
     const version = String(downloadResultsValue(params.downloadResults, 'version') ?? '').trim() || 'latest';
     const appPort = String(params.appResults.appPort ?? DEFAULT_INSTALL_APP_PORT).trim() || DEFAULT_INSTALL_APP_PORT;
     const storagePath =
-      path.resolve(
+      resolveConfiguredEnvPath(
         String(params.appResults.storagePath ?? '').trim()
         || defaultInstallStoragePath(params.envName),
-      );
+      )
+      ?? resolveEnvRelativePath(defaultInstallStoragePath(params.envName));
     const dbDialect = String(params.dbResults.dbDialect ?? 'postgres').trim() || 'postgres';
     const dbHost = String(params.dbResults.dbHost ?? DEFAULT_INSTALL_DB_HOST).trim() || DEFAULT_INSTALL_DB_HOST;
     const dbPort = String(params.dbResults.dbPort ?? defaultDbPortForDialect(dbDialect)).trim()
@@ -1855,12 +1885,24 @@ export default class Install extends Command {
     },
   ): string[] {
     const argv = ['-y', '--no-intro'];
+    const source = String(results.source ?? '').trim();
     if (options?.verbose) {
       argv.push('--verbose');
     }
     Install.pushDownloadArgIfValue(argv, '--source', results.source);
-    Install.pushDownloadArgIfValue(argv, '--version', results.version);
-    Install.pushDownloadArgIfValue(argv, '--output-dir', results.outputDir);
+    Install.pushDownloadArgIfValue(argv, '--version', downloadResultsValue(results, 'version'));
+    Install.pushDownloadArgIfValue(
+      argv,
+      '--output-dir',
+      source === 'npm' || source === 'git'
+        ? (
+            resolveConfiguredEnvPath(results.outputDir)
+            ?? resolveConfiguredEnvPath(
+              String(results.outputDir ?? '').trim() || defaultInstallAppRootPath(results.env),
+            )
+          )
+        : results.outputDir,
+    );
     Install.pushDownloadArgIfValue(argv, '--git-url', results.gitUrl);
     Install.pushDownloadArgIfValue(argv, '--docker-registry', results.dockerRegistry);
     Install.pushDownloadArgIfValue(argv, '--docker-platform', results.dockerPlatform);
@@ -1900,7 +1942,19 @@ export default class Install extends Command {
       String(params.downloadResults.outputDir ?? '').trim()
       || String(params.appResults.appRootPath ?? '').trim()
       || defaultInstallAppRootPath(params.envName);
-    return path.resolve(process.cwd(), outputDir);
+    return resolveConfiguredEnvPath(outputDir) ?? resolveEnvRelativePath(defaultInstallAppRootPath(params.envName));
+  }
+
+  private static resolveLocalProjectConfigPath(params: {
+    envName: string;
+    appResults: Record<string, PromptValue>;
+    downloadResults: Record<string, PromptValue>;
+  }): string {
+    return (
+      String(params.downloadResults.outputDir ?? '').trim()
+      || String(params.appResults.appRootPath ?? '').trim()
+      || defaultInstallAppRootPath(params.envName)
+    );
   }
 
   private commandStdio(verbose?: boolean): 'inherit' | 'ignore' {
@@ -1937,14 +1991,18 @@ export default class Install extends Command {
       verbose: params.verbose,
     });
 
-    const projectRoot = Install.resolveLocalProjectRoot({
+    const downloadedProjectRoot = Install.resolveLocalProjectRoot({
       envName: params.envName,
       appResults: params.appResults,
       downloadResults: params.downloadResults,
       downloadCommandResult: result,
     });
-    params.appResults.appRootPath = projectRoot;
-    return projectRoot;
+    params.appResults.appRootPath = Install.resolveLocalProjectConfigPath({
+      envName: params.envName,
+      appResults: params.appResults,
+      downloadResults: params.downloadResults,
+    });
+    return downloadedProjectRoot;
   }
 
   private static buildLocalAppEnvVars(params: {
@@ -1953,10 +2011,12 @@ export default class Install extends Command {
     dbResults: Record<string, PromptValue>;
     rootResults: Record<string, PromptValue>;
   }): Record<string, string> {
-    const storagePath = path.resolve(
+    const configuredStoragePath =
       String(params.appResults.storagePath ?? '').trim()
-      || defaultInstallStoragePath(params.envName),
-    );
+      || defaultInstallStoragePath(params.envName);
+    const storagePath =
+      resolveConfiguredEnvPath(configuredStoragePath)
+      ?? resolveEnvRelativePath(defaultInstallStoragePath(params.envName));
     const dbDialect =
       String(params.dbResults.dbDialect ?? 'postgres').trim()
       || 'postgres';
@@ -2234,8 +2294,6 @@ export default class Install extends Command {
     const argv = [
       params.envName,
       '--no-intro',
-      '--scope',
-      CONFIG_SCOPE,
       '--api-base-url',
       apiBaseUrl,
       '--auth-type',
@@ -2402,7 +2460,6 @@ export default class Install extends Command {
       },
       values: {
         name: envName,
-        scope: 'project',
         ...(resumePreset?.envAddPreset ?? {}),
       },
       yes,
@@ -2552,5 +2609,8 @@ function downloadResultsValue(
   downloadResults: Record<string, PromptValue>,
   key: string,
 ): PromptValue | undefined {
+  if (key === 'version' && String(downloadResults.version ?? '').trim() === 'other') {
+    return downloadResults.otherVersion;
+  }
   return downloadResults[key];
 }
