@@ -450,6 +450,157 @@ describe('flowSurfaces applyBlueprint contract', () => {
     }
   });
 
+  it('should create flow-model tree blocks through applyBlueprint and reject unsupported tree containers', async () => {
+    const executeRes = await rootAgent.resource('flowSurfaces').applyBlueprint({
+      values: {
+        mode: 'create',
+        navigation: {
+          item: {
+            title: 'Tree blueprint',
+          },
+        },
+        page: {
+          title: 'Tree blueprint',
+        },
+        tabs: [
+          {
+            title: 'Tree',
+            blocks: [
+              {
+                key: 'categoryTree',
+                type: 'tree',
+                resource: {
+                  dataSourceKey: 'main',
+                  collectionName: 'categories',
+                },
+                settings: {
+                  searchable: false,
+                  defaultExpandAll: true,
+                  includeDescendants: true,
+                  pageSize: 200,
+                  titleField: 'title',
+                },
+              },
+            ],
+            layout: {
+              rows: [[{ key: 'categoryTree', span: 8 }]],
+            },
+          },
+        ],
+      },
+    });
+
+    expect(executeRes.status, readErrorMessage(executeRes)).toBe(200);
+    const data = getData(executeRes);
+    const treeBlock = collectDescendantNodes(data.surface.tree, (item) => item?.use === 'TreeBlockModel')[0];
+    expect(treeBlock).toMatchObject({
+      use: 'TreeBlockModel',
+      props: {
+        searchable: false,
+        defaultExpandAll: true,
+        includeDescendants: true,
+        pageSize: 200,
+        fieldNames: {
+          title: 'title',
+        },
+      },
+      stepParams: {
+        resourceSettings: {
+          init: {
+            dataSourceKey: 'main',
+            collectionName: 'categories',
+          },
+        },
+        treeSettings: {
+          searchable: {
+            searchable: false,
+          },
+          defaultExpandAll: {
+            defaultExpandAll: true,
+          },
+          includeDescendants: {
+            includeDescendants: true,
+          },
+          pageSize: {
+            pageSize: 200,
+          },
+          titleField: {
+            titleField: 'title',
+          },
+        },
+      },
+    });
+    expect(treeBlock.subModels).toBeUndefined();
+
+    const invalidCases = [
+      {
+        key: 'fields',
+        payload: {
+          fields: ['title'],
+        },
+        message: 'fields is not supported on tree blocks',
+      },
+      {
+        key: 'fieldGroups',
+        payload: {
+          fieldGroups: [
+            {
+              title: 'Tree fields',
+              fields: ['title'],
+            },
+          ],
+        },
+        message: 'fieldGroups is not supported on tree blocks',
+      },
+      {
+        key: 'actions',
+        payload: {
+          actions: ['refresh'],
+        },
+        message: 'actions is not supported on tree blocks',
+      },
+      {
+        key: 'recordActions',
+        payload: {
+          recordActions: ['view'],
+        },
+        message: 'recordActions is not supported on tree blocks',
+      },
+    ];
+
+    for (const item of invalidCases) {
+      const invalidRes = await rootAgent.resource('flowSurfaces').applyBlueprint({
+        values: {
+          mode: 'create',
+          navigation: {
+            item: {
+              title: `Invalid tree blueprint ${item.key}`,
+            },
+          },
+          page: {
+            title: `Invalid tree blueprint ${item.key}`,
+          },
+          tabs: [
+            {
+              title: 'Tree',
+              blocks: [
+                {
+                  key: 'categoryTree',
+                  type: 'tree',
+                  collection: 'categories',
+                  ...item.payload,
+                },
+              ],
+            },
+          ],
+        },
+      });
+
+      expect(invalidRes.status).toBe(400);
+      expect(readErrorMessage(invalidRes)).toContain(item.message);
+    }
+  });
+
   it('should apply block-level defaultFilter in applyBlueprint data blocks and prefer explicit action settings', async () => {
     const blockDefaultFilter = {
       logic: '$and',
@@ -4297,6 +4448,52 @@ describe('flowSurfaces applyBlueprint contract', () => {
       row1: [24],
       row2: [12, 12],
     });
+  });
+
+  it('should apply relation fieldType on blueprint field objects without creating standalone table blocks', async () => {
+    const executeRes = await rootAgent.resource('flowSurfaces').applyBlueprint({
+      values: {
+        version: '1',
+        mode: 'create',
+        page: {
+          title: 'Blueprint relation fieldType',
+        },
+        tabs: [
+          {
+            key: 'overview',
+            title: 'Overview',
+            blocks: [
+              {
+                key: 'userForm',
+                type: 'createForm',
+                collection: 'users',
+                fields: [
+                  {
+                    key: 'rolesField',
+                    field: 'roles',
+                    fieldType: 'popupSubTable',
+                    fields: ['title', 'name'],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(executeRes.status).toBe(200);
+    const data = getData(executeRes);
+    const formBlock = _.castArray(data.surface?.tree?.subModels?.tabs || [])[0]?.subModels?.grid?.subModels?.items?.[0];
+    const formItems = _.castArray(formBlock?.subModels?.grid?.subModels?.items || []);
+    expect(formItems).toHaveLength(1);
+    expect(formItems[0]?.use).toBe('FormItemModel');
+    expect(formItems[0]?.subModels?.field?.use).toBe('PopupSubTableFieldModel');
+    expect(
+      _.castArray(formItems[0]?.subModels?.field?.subModels?.subTableColumns || [])
+        .filter((item: any) => item?.use === 'TableColumnModel')
+        .map((item: any) => item?.stepParams?.fieldSettings?.init?.fieldPath),
+    ).toEqual(['title', 'name']);
   });
 
   it('should reject fieldsLayout on applyBlueprint blocks that do not own a field grid', async () => {

@@ -231,6 +231,7 @@ describe('flowSurfaces catalog + compose contract', () => {
       );
       expect(pageCatalog.blocks.find((item: any) => item.use === 'ListBlockModel')).toBeUndefined();
       expect(pageCatalog.blocks.find((item: any) => item.use === 'GridCardBlockModel')).toBeUndefined();
+      expect(pageCatalog.blocks.find((item: any) => item.use === 'TreeBlockModel')).toBeUndefined();
       expect(pageCatalog.blocks.find((item: any) => item.use === 'MarkdownBlockModel')).toBeUndefined();
       expect(pageCatalog.blocks.find((item: any) => item.use === 'IframeBlockModel')).toBeUndefined();
       expect(pageCatalog.blocks.find((item: any) => item.use === 'MapBlockModel')).toBeUndefined();
@@ -278,6 +279,52 @@ describe('flowSurfaces catalog + compose contract', () => {
       expect(tableCatalog.recordActions.find((item: any) => item.key === 'composeEmail')).toBeUndefined();
       expect(tableCatalog.recordActions.find((item: any) => item.key === 'templatePrint')).toBeUndefined();
       expect(tableCatalog.recordActions.find((item: any) => item.key === 'triggerWorkflow')).toBeUndefined();
+    } finally {
+      await syncFlowSurfacesEnabledPlugins(app, FLOW_SURFACES_TEST_PLUGINS);
+    }
+  });
+
+  it('should expose tree block only when block-tree is enabled', async () => {
+    const page = await createPage(rootAgent, {
+      title: 'Tree catalog page',
+      tabTitle: 'Tree catalog tab',
+    });
+
+    const fullCatalog = getData(
+      await rootAgent.resource('flowSurfaces').catalog({
+        values: {
+          target: {
+            uid: page.tabSchemaUid,
+          },
+          sections: ['blocks'],
+        },
+      }),
+    );
+    const treeItem = fullCatalog.blocks.find((item: any) => item.key === 'tree');
+    expect(treeItem).toMatchObject({
+      use: 'TreeBlockModel',
+      requiredInitParams: ['dataSourceKey', 'collectionName'],
+      createSupported: true,
+    });
+
+    await syncFlowSurfacesEnabledPlugins(app, FLOW_SURFACES_MINIMAL_TEST_PLUGINS);
+    try {
+      const minimalRootAgent: any = await loginFlowSurfacesRootAgent(app);
+      const minimalPage = await createPage(minimalRootAgent, {
+        title: 'Minimal tree catalog page',
+        tabTitle: 'Minimal tree catalog tab',
+      });
+      const minimalCatalog = getData(
+        await minimalRootAgent.resource('flowSurfaces').catalog({
+          values: {
+            target: {
+              uid: minimalPage.tabSchemaUid,
+            },
+            sections: ['blocks'],
+          },
+        }),
+      );
+      expect(minimalCatalog.blocks.find((item: any) => item.key === 'tree')).toBeUndefined();
     } finally {
       await syncFlowSurfacesEnabledPlugins(app, FLOW_SURFACES_TEST_PLUGINS);
     }
@@ -336,6 +383,16 @@ describe('flowSurfaces catalog + compose contract', () => {
       resourceInit: {
         dataSourceKey: 'main',
         collectionName: 'calendar_events',
+      },
+    });
+    const tree = await addBlockData(rootAgent, {
+      target: {
+        uid: page.tabSchemaUid,
+      },
+      type: 'tree',
+      resourceInit: {
+        dataSourceKey: 'main',
+        collectionName: 'categories',
       },
     });
 
@@ -508,6 +565,37 @@ describe('flowSurfaces catalog + compose contract', () => {
     expect(
       calendarCatalog.actions.find((item: any) => item.key === 'turnPages')?.configureOptions?.title,
     ).toBeUndefined();
+
+    const treeCatalog = getData(
+      await rootAgent.resource('flowSurfaces').catalog({
+        values: {
+          target: {
+            uid: tree.uid,
+          },
+          expand: ['item.configureOptions'],
+        },
+      }),
+    );
+    expect(treeCatalog.actions || []).toEqual([]);
+    expect(treeCatalog.recordActions || []).toEqual([]);
+    expect(treeCatalog.fields || []).toEqual([]);
+    expect(treeCatalog.node.configureOptions).toMatchObject({
+      searchable: {
+        type: 'boolean',
+      },
+      defaultExpandAll: {
+        type: 'boolean',
+      },
+      includeDescendants: {
+        type: 'boolean',
+      },
+      titleField: {
+        type: 'string',
+      },
+      pageSize: {
+        type: 'number',
+      },
+    });
 
     const createFormCatalog = getData(
       await rootAgent.resource('flowSurfaces').catalog({
@@ -841,6 +929,131 @@ describe('flowSurfaces catalog + compose contract', () => {
     });
     expect(invalidCollectionRes.status).toBe(400);
     expect(readErrorMessage(invalidCollectionRes)).toContain(`must contain at least one date field`);
+  });
+
+  it('should create configure and batch-add flow-model tree blocks', async () => {
+    const page = await createPage(rootAgent, {
+      title: 'Tree block contract page',
+      tabTitle: 'Tree block contract tab',
+    });
+
+    const tree = await addBlockData(rootAgent, {
+      target: {
+        uid: page.tabSchemaUid,
+      },
+      type: 'tree',
+      resourceInit: {
+        dataSourceKey: 'main',
+        collectionName: 'categories',
+      },
+    });
+    const treeReadback = await getSurface(rootAgent, {
+      uid: tree.uid,
+    });
+    expect(treeReadback.tree).toMatchObject({
+      use: 'TreeBlockModel',
+      props: {
+        searchable: true,
+        defaultExpandAll: false,
+        includeDescendants: true,
+      },
+      stepParams: {
+        resourceSettings: {
+          init: {
+            dataSourceKey: 'main',
+            collectionName: 'categories',
+          },
+        },
+      },
+    });
+    expect(treeReadback.tree.subModels).toBeUndefined();
+
+    const configureRes = await rootAgent.resource('flowSurfaces').configure({
+      values: {
+        target: {
+          uid: tree.uid,
+        },
+        changes: {
+          searchable: false,
+          defaultExpandAll: true,
+          includeDescendants: false,
+          titleField: 'title',
+          pageSize: 200,
+          height: 420,
+        },
+      },
+    });
+    expect(configureRes.status, readErrorMessage(configureRes)).toBe(200);
+    const configuredTree = await getSurface(rootAgent, {
+      uid: tree.uid,
+    });
+    expect(configuredTree.tree.props).toMatchObject({
+      searchable: false,
+      defaultExpandAll: true,
+      includeDescendants: false,
+      fieldNames: {
+        title: 'title',
+      },
+      pageSize: 200,
+    });
+    expect(configuredTree.tree.decoratorProps).toMatchObject({
+      height: 420,
+    });
+    expect(configuredTree.tree.stepParams?.treeSettings).toMatchObject({
+      searchable: {
+        searchable: false,
+      },
+      defaultExpandAll: {
+        defaultExpandAll: true,
+      },
+      includeDescendants: {
+        includeDescendants: false,
+      },
+      titleField: {
+        titleField: 'title',
+      },
+      pageSize: {
+        pageSize: 200,
+      },
+    });
+
+    const batchPage = await createPage(rootAgent, {
+      title: 'Batch tree block page',
+      tabTitle: 'Batch tree block tab',
+    });
+    const batchRes = await rootAgent.resource('flowSurfaces').addBlocks({
+      values: {
+        target: {
+          uid: batchPage.tabSchemaUid,
+        },
+        blocks: [
+          {
+            key: 'treeA',
+            type: 'tree',
+            resourceInit: {
+              dataSourceKey: 'main',
+              collectionName: 'categories',
+            },
+          },
+          {
+            key: 'treeB',
+            use: 'TreeBlockModel',
+            resourceInit: {
+              dataSourceKey: 'main',
+              collectionName: 'departments',
+            },
+            settings: {
+              searchable: false,
+            },
+          },
+        ],
+      },
+    });
+    expect(batchRes.status).toBe(200);
+    const batchData = getData(batchRes);
+    expect(batchData.successCount).toBe(2);
+    expect(batchData.errorCount).toBe(0);
+    expect(batchData.blocks.map((item: any) => item.result?.uid).filter(Boolean)).toHaveLength(2);
   });
 
   it('should project missing calendar popup hosts during readback without persisting them', async () => {
@@ -1885,6 +2098,468 @@ describe('flowSurfaces catalog + compose contract', () => {
     expect(usernameFilterReadback.tree.stepParams?.filterFormItemSettings?.init?.defaultTargetUid).toBe(tableBlock.uid);
   });
 
+  it('should compose tree blocks with layout and reject unsupported tree content containers', async () => {
+    const page = await createPage(rootAgent, {
+      title: 'Compose tree page',
+      tabTitle: 'Compose tree tab',
+    });
+
+    const composeRes = await rootAgent.resource('flowSurfaces').compose({
+      values: {
+        target: {
+          uid: page.tabSchemaUid,
+        },
+        blocks: [
+          {
+            key: 'categoryTree',
+            type: 'tree',
+            resource: {
+              dataSourceKey: 'main',
+              collectionName: 'categories',
+            },
+            settings: {
+              searchable: true,
+              defaultExpandAll: true,
+              includeDescendants: true,
+              pageSize: 200,
+              titleField: 'title',
+            },
+          },
+        ],
+        layout: {
+          rows: [[{ key: 'categoryTree', span: 8 }]],
+        },
+      },
+    });
+    expect(composeRes.status).toBe(200);
+    const composed = getData(composeRes);
+    const treeBlock = getComposeBlock(composed, 'categoryTree');
+    expect(composed.layout.rows.row1).toEqual([[treeBlock.uid]]);
+    expect(composed.layout.sizes.row1).toEqual([24]);
+
+    const treeReadback = await getSurface(rootAgent, {
+      uid: treeBlock.uid,
+    });
+    expect(treeReadback.tree).toMatchObject({
+      use: 'TreeBlockModel',
+      props: {
+        searchable: true,
+        defaultExpandAll: true,
+        includeDescendants: true,
+        pageSize: 200,
+        fieldNames: {
+          title: 'title',
+        },
+      },
+      stepParams: {
+        resourceSettings: {
+          init: {
+            dataSourceKey: 'main',
+            collectionName: 'categories',
+          },
+        },
+        treeSettings: {
+          defaultExpandAll: {
+            defaultExpandAll: true,
+          },
+          includeDescendants: {
+            includeDescendants: true,
+          },
+          pageSize: {
+            pageSize: 200,
+          },
+          titleField: {
+            titleField: 'title',
+          },
+        },
+      },
+    });
+    expect(treeReadback.tree.subModels).toBeUndefined();
+
+    const invalidCases = [
+      {
+        key: 'fields',
+        payload: {
+          fields: ['title'],
+        },
+        message: 'tree does not support fields[]',
+      },
+      {
+        key: 'fieldGroups',
+        payload: {
+          fieldGroups: [
+            {
+              title: 'Tree fields',
+              fields: ['title'],
+            },
+          ],
+        },
+        message: 'tree does not support fieldGroups[]',
+      },
+      {
+        key: 'actions',
+        payload: {
+          actions: ['refresh'],
+        },
+        message: 'tree does not support actions[]',
+      },
+      {
+        key: 'recordActions',
+        payload: {
+          recordActions: ['view'],
+        },
+        message: 'tree does not support recordActions[]',
+      },
+    ];
+
+    for (const item of invalidCases) {
+      const invalidPage = await createPage(rootAgent, {
+        title: `Invalid tree compose ${item.key}`,
+        tabTitle: `Invalid tree compose ${item.key}`,
+      });
+      const invalidRes = await rootAgent.resource('flowSurfaces').compose({
+        values: {
+          target: {
+            uid: invalidPage.tabSchemaUid,
+          },
+          blocks: [
+            {
+              key: 'tree',
+              type: 'tree',
+              resource: {
+                dataSourceKey: 'main',
+                collectionName: 'categories',
+              },
+              ...item.payload,
+            },
+          ],
+        },
+      });
+      expect(invalidRes.status).toBe(400);
+      expect(readErrorMessage(invalidRes)).toContain(item.message);
+    }
+  });
+
+  it('should compose relation fields with fieldType on form blocks', async () => {
+    const page = await createPage(rootAgent, {
+      title: 'Compose relation fieldType page',
+      tabTitle: 'Compose relation fieldType tab',
+    });
+
+    const composeRes = getData(
+      await rootAgent.resource('flowSurfaces').compose({
+        values: {
+          target: {
+            uid: page.tabSchemaUid,
+          },
+          blocks: [
+            {
+              key: 'userForm',
+              type: 'createForm',
+              resource: {
+                dataSourceKey: 'main',
+                collectionName: 'users',
+              },
+              fields: [
+                {
+                  key: 'rolesField',
+                  fieldPath: 'roles',
+                  fieldType: 'popupSubTable',
+                  fields: ['title', 'name'],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    const formBlock = getComposeBlock(composeRes, 'userForm');
+    const formSurface = await getSurface(rootAgent, {
+      uid: formBlock.uid,
+    });
+    const formItems = _.castArray(formSurface.tree?.subModels?.grid?.subModels?.items || []);
+    expect(formItems).toHaveLength(1);
+    expect(formItems[0]?.use).toBe('FormItemModel');
+    expect(formItems[0]?.subModels?.field?.use).toBe('PopupSubTableFieldModel');
+    expect(
+      _.castArray(formItems[0]?.subModels?.field?.subModels?.subTableColumns || [])
+        .filter((item: any) => item?.use === 'TableColumnModel')
+        .map((item: any) => item?.stepParams?.fieldSettings?.init?.fieldPath),
+    ).toEqual(['title', 'name']);
+
+    const fieldCatalog = getData(
+      await rootAgent.resource('flowSurfaces').catalog({
+        values: {
+          target: {
+            uid: formItems[0].uid,
+          },
+        },
+      }),
+    );
+    expect(fieldCatalog.node.relation?.fieldTypes).toEqual(
+      expect.arrayContaining(['select', 'picker', 'subFormList', 'popupSubTable']),
+    );
+    expect(fieldCatalog.node.relation?.current).toMatchObject({
+      fieldType: 'popupSubTable',
+      fields: ['title', 'name'],
+      titleField: 'title',
+    });
+    expect(fieldCatalog.node.relation?.candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          fieldType: 'picker',
+          defaults: expect.objectContaining({
+            titleField: 'title',
+            selectorFields: ['title'],
+          }),
+        }),
+        expect.objectContaining({
+          fieldType: 'popupSubTable',
+          defaults: expect.objectContaining({
+            titleField: 'title',
+            fields: ['title'],
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it('should compose inline editable subTable columns with editable fields', async () => {
+    const page = await createPage(rootAgent, {
+      title: 'Compose editable relation subTable page',
+      tabTitle: 'Compose editable relation subTable tab',
+    });
+
+    const composeRes = getData(
+      await rootAgent.resource('flowSurfaces').compose({
+        values: {
+          target: {
+            uid: page.tabSchemaUid,
+          },
+          blocks: [
+            {
+              key: 'userForm',
+              type: 'createForm',
+              resource: {
+                dataSourceKey: 'main',
+                collectionName: 'users',
+              },
+              fields: [
+                {
+                  key: 'rolesField',
+                  fieldPath: 'roles',
+                  fieldType: 'subTable',
+                  fields: ['title', 'name'],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    const formBlock = getComposeBlock(composeRes, 'userForm');
+    const formSurface = await getSurface(rootAgent, {
+      uid: formBlock.uid,
+    });
+    const formItems = _.castArray(formSurface.tree?.subModels?.grid?.subModels?.items || []);
+    expect(formItems).toHaveLength(1);
+    const rolesField = formItems[0]?.subModels?.field;
+    expect(rolesField?.use).toBe('SubTableFieldModel');
+
+    const columns = _.castArray(rolesField?.subModels?.columns || []);
+    expect(columns.map((item: any) => item?.stepParams?.fieldSettings?.init?.fieldPath)).toEqual(['title', 'name']);
+    expect(columns.map((item: any) => item?.subModels?.field?.use)).toEqual(['InputFieldModel', 'InputFieldModel']);
+  });
+
+  it('should preserve explicit empty relation fields in compose fieldType specs', async () => {
+    const page = await createPage(rootAgent, {
+      title: 'Compose empty relation fieldType page',
+      tabTitle: 'Compose empty relation fieldType tab',
+    });
+
+    const composeRes = getData(
+      await rootAgent.resource('flowSurfaces').compose({
+        values: {
+          target: {
+            uid: page.tabSchemaUid,
+          },
+          blocks: [
+            {
+              key: 'userForm',
+              type: 'createForm',
+              resource: {
+                dataSourceKey: 'main',
+                collectionName: 'users',
+              },
+              fields: [
+                {
+                  key: 'rolesField',
+                  fieldPath: 'roles',
+                  fieldType: 'popupSubTable',
+                  fields: [],
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    const formBlock = getComposeBlock(composeRes, 'userForm');
+    const formSurface = await getSurface(rootAgent, {
+      uid: formBlock.uid,
+    });
+    const formItems = _.castArray(formSurface.tree?.subModels?.grid?.subModels?.items || []);
+    expect(
+      _.castArray(formItems[0]?.subModels?.field?.subModels?.subTableColumns || [])
+        .filter((item: any) => item?.use === 'TableColumnModel')
+        .map((item: any) => item?.stepParams?.fieldSettings?.init?.fieldPath),
+    ).toEqual([]);
+  });
+
+  it('should addBlock with inline fields that use relation fieldType semantics', async () => {
+    const page = await createPage(rootAgent, {
+      title: 'AddBlock inline relation fields page',
+      tabTitle: 'AddBlock inline relation fields tab',
+    });
+
+    const addBlockByTypeRes = getData(
+      await rootAgent.resource('flowSurfaces').addBlock({
+        values: {
+          target: {
+            uid: page.tabSchemaUid,
+          },
+          type: 'createForm',
+          resourceInit: {
+            dataSourceKey: 'main',
+            collectionName: 'users',
+          },
+          fields: [
+            {
+              key: 'rolesField',
+              fieldPath: 'roles',
+              fieldType: 'popupSubTable',
+              fields: ['title'],
+            },
+          ],
+        },
+      }),
+    );
+
+    const blockByTypeSurface = await getSurface(rootAgent, {
+      uid: addBlockByTypeRes.uid,
+    });
+    const formItemsByType = _.castArray(blockByTypeSurface.tree?.subModels?.grid?.subModels?.items || []);
+    expect(formItemsByType).toHaveLength(1);
+    expect(formItemsByType[0]?.subModels?.field?.use).toBe('PopupSubTableFieldModel');
+    expect(
+      _.castArray(formItemsByType[0]?.subModels?.field?.subModels?.subTableColumns || [])
+        .filter((item: any) => item?.use === 'TableColumnModel')
+        .map((item: any) => item?.stepParams?.fieldSettings?.init?.fieldPath),
+    ).toEqual(['title']);
+
+    const addBlockByUseRes = getData(
+      await rootAgent.resource('flowSurfaces').addBlock({
+        values: {
+          target: {
+            uid: page.tabSchemaUid,
+          },
+          use: 'CreateFormModel',
+          resourceInit: {
+            dataSourceKey: 'main',
+            collectionName: 'users',
+          },
+          fields: [
+            {
+              key: 'rolesFieldByUse',
+              fieldPath: 'roles',
+              fieldType: 'popupSubTable',
+            },
+          ],
+        },
+      }),
+    );
+
+    const blockByUseSurface = await getSurface(rootAgent, {
+      uid: addBlockByUseRes.uid,
+    });
+    const formItemsByUse = _.castArray(blockByUseSurface.tree?.subModels?.grid?.subModels?.items || []);
+    expect(formItemsByUse).toHaveLength(1);
+    expect(formItemsByUse[0]?.subModels?.field?.use).toBe('PopupSubTableFieldModel');
+
+    const addBlocksData = getData(
+      await rootAgent.resource('flowSurfaces').addBlocks({
+        values: {
+          target: {
+            uid: page.tabSchemaUid,
+          },
+          blocks: [
+            {
+              key: 'batchUserForm',
+              type: 'createForm',
+              resourceInit: {
+                dataSourceKey: 'main',
+                collectionName: 'users',
+              },
+              fields: [
+                {
+                  key: 'batchRolesField',
+                  fieldPath: 'roles',
+                  fieldType: 'popupSubTable',
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(addBlocksData.successCount).toBe(1);
+    const batchBlockSurface = await getSurface(rootAgent, {
+      uid: addBlocksData.blocks[0].result.uid,
+    });
+    const batchFormItems = _.castArray(batchBlockSurface.tree?.subModels?.grid?.subModels?.items || []);
+    expect(batchFormItems).toHaveLength(1);
+    expect(batchFormItems[0]?.subModels?.field?.use).toBe('PopupSubTableFieldModel');
+  });
+
+  it('should reject internal relation field model keys in public field specs', async () => {
+    const page = await createPage(rootAgent, {
+      title: 'Reject internal relation field keys page',
+      tabTitle: 'Reject internal relation field keys tab',
+    });
+
+    const composeRes = await rootAgent.resource('flowSurfaces').compose({
+      values: {
+        target: {
+          uid: page.tabSchemaUid,
+        },
+        blocks: [
+          {
+            key: 'userForm',
+            type: 'createForm',
+            resource: {
+              dataSourceKey: 'main',
+              collectionName: 'users',
+            },
+            fields: [
+              {
+                key: 'rolesField',
+                fieldPath: 'roles',
+                fieldComponent: 'PopupSubTableFieldModel',
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect(composeRes.status).toBe(400);
+    expect(readErrorMessage(composeRes)).toContain('does not accept internal field keys');
+  });
+
   it('should reject fieldsLayout on compose blocks that do not own a field grid', async () => {
     const page = await createPage(rootAgent, {
       title: 'Invalid compose fieldsLayout page',
@@ -2332,6 +3007,96 @@ describe('flowSurfaces catalog + compose contract', () => {
     expect(_.castArray(defaultEditPopupBlock?.subModels?.actions || []).map((item: any) => item?.use)).toContain(
       'FormSubmitActionModel',
     );
+  });
+
+  it('should create list and grid-card record actions with frontend-aligned button defaults', async () => {
+    const page = await createPage(rootAgent, {
+      title: 'Record action style page',
+      tabTitle: 'Record action style tab',
+    });
+    const list = await addBlockData(rootAgent, {
+      target: {
+        uid: page.tabSchemaUid,
+      },
+      type: 'list',
+      resourceInit: {
+        dataSourceKey: 'main',
+        collectionName: 'users',
+      },
+    });
+    const gridCard = await addBlockData(rootAgent, {
+      target: {
+        uid: page.tabSchemaUid,
+      },
+      type: 'gridCard',
+      resourceInit: {
+        dataSourceKey: 'main',
+        collectionName: 'users',
+      },
+    });
+
+    const listEditAction = getData(
+      await rootAgent.resource('flowSurfaces').addRecordAction({
+        values: {
+          target: {
+            uid: list.uid,
+          },
+          type: 'edit',
+          settings: {
+            title: '编辑',
+          },
+        },
+      }),
+    );
+    const gridCardViewAction = getData(
+      await rootAgent.resource('flowSurfaces').addRecordAction({
+        values: {
+          target: {
+            uid: gridCard.uid,
+          },
+          type: 'view',
+        },
+      }),
+    );
+    const explicitListEditAction = getData(
+      await rootAgent.resource('flowSurfaces').addRecordAction({
+        values: {
+          target: {
+            uid: list.uid,
+          },
+          type: 'edit',
+          settings: {
+            type: 'primary',
+            icon: 'EditOutlined',
+          },
+        },
+      }),
+    );
+
+    const listEditReadback = await getSurface(rootAgent, {
+      uid: listEditAction.uid,
+    });
+    expect(listEditReadback.tree.stepParams?.buttonSettings?.general).toMatchObject({
+      title: '编辑',
+      type: 'link',
+      icon: null,
+    });
+
+    const gridCardViewReadback = await getSurface(rootAgent, {
+      uid: gridCardViewAction.uid,
+    });
+    expect(gridCardViewReadback.tree.stepParams?.buttonSettings?.general).toMatchObject({
+      type: 'link',
+      icon: null,
+    });
+
+    const explicitListEditReadback = await getSurface(rootAgent, {
+      uid: explicitListEditAction.uid,
+    });
+    expect(explicitListEditReadback.tree.stepParams?.buttonSettings?.general).toMatchObject({
+      type: 'primary',
+      icon: 'EditOutlined',
+    });
   });
 
   it('should compose a grid-card block with item fields block actions and record actions', async () => {
@@ -3674,7 +4439,7 @@ describe('flowSurfaces catalog + compose contract', () => {
       },
     });
     expect(rawFieldRes.status).toBe(400);
-    expect(readErrorMessage(rawFieldRes)).toContain('does not accept raw keys');
+    expect(readErrorMessage(rawFieldRes)).toContain('does not accept internal field keys');
 
     const rawActionRes = await rootAgent.resource('flowSurfaces').addAction({
       values: {
