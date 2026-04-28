@@ -1211,6 +1211,144 @@ test('ps shows managed network and storage path for local builtin-db envs', asyn
   ]);
 });
 
+test('info shows grouped app details with secrets masked by default', async () => {
+  const { default: Info } = await import('../commands/app/info.js');
+  mocks.resolveManagedAppRuntime.mockResolvedValue({
+    kind: 'local',
+    envName: 'app1',
+    source: 'npm',
+    projectRoot: '/tmp/local-app',
+    env: {
+      apiBaseUrl: 'http://127.0.0.1:13000/api',
+      storagePath: '/tmp/storage/local',
+      auth: {
+        type: 'oauth',
+        accessToken: 'access-secret',
+        refreshToken: 'refresh-secret',
+        expiresAt: '2026-04-28T07:35:49.593Z',
+        scope: 'api',
+        issuer: 'http://127.0.0.1:13000/api',
+        clientId: 'client-id',
+        resource: 'http://127.0.0.1:13000/api/',
+      },
+      config: {
+        appPort: '13000',
+        timezone: 'Asia/Shanghai',
+        downloadVersion: 'beta',
+        dockerRegistry: 'nocobase/nocobase',
+        dockerPlatform: 'linux/arm64',
+        builtinDb: true,
+        dbDialect: 'postgres',
+        builtinDbImage: 'postgres:16',
+        dbHost: '127.0.0.1',
+        dbPort: '13001',
+        dbDatabase: 'nocobase',
+        dbUser: 'nocobase',
+        dbPassword: 'db-secret',
+      },
+    },
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => ({
+      ok: true,
+      text: async () => 'ok',
+    })),
+  );
+
+  const command = createCommandHarness({
+    flags: {
+      env: 'app1',
+      json: false,
+      'show-secrets': false,
+    },
+  });
+
+  await Info.prototype.run.call(command);
+
+  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toContain('App');
+  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toContain('appRootPath');
+  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toContain('/tmp/local-app');
+  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toContain('dockerRegistry');
+  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toContain('nocobase/nocobase');
+  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toContain('dockerPlatform');
+  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toContain('linux/arm64');
+  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toContain('databaseStatus');
+  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toContain('dbPassword');
+  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toContain('********');
+  expect(String(command.log.mock.calls[0]?.[0] ?? '')).toContain('auth.accessToken');
+});
+
+test('info supports json output with grouped sections', async () => {
+  const { default: Info } = await import('../commands/app/info.js');
+  mocks.resolveManagedAppRuntime.mockResolvedValue({
+    kind: 'http',
+    envName: 'remote',
+    source: undefined,
+    env: {
+      apiBaseUrl: 'https://demo.example.com/api',
+      auth: {
+        type: 'token',
+        accessToken: 'secret-token',
+      },
+      config: {
+        kind: 'http',
+      },
+    },
+  });
+
+  const command = createCommandHarness({
+    flags: {
+      env: 'remote',
+      json: true,
+      'show-secrets': false,
+    },
+  });
+
+  await Info.prototype.run.call(command);
+
+  expect(JSON.parse(String(command.log.mock.calls[0]?.[0] ?? '{}'))).toEqual({
+    ok: true,
+    kind: 'http',
+    env: 'remote',
+    app: {
+      appRootPath: '-',
+      storagePath: '-',
+      appPort: '-',
+      appStatus: 'http',
+      source: '-',
+      downloadVersion: '-',
+      dockerRegistry: '-',
+      dockerPlatform: '-',
+      timezone: '-',
+    },
+    db: {
+      databaseStatus: 'external',
+      builtinDb: '-',
+      dbDialect: '-',
+      builtinDbImage: '-',
+      dbHost: '-',
+      dbPort: '-',
+      dbDatabase: '-',
+      dbUser: '-',
+      dbPassword: '-',
+    },
+    api: {
+      apiBaseUrl: 'https://demo.example.com/api',
+      auth: {
+        type: 'token',
+        expiresAt: '-',
+        scope: '-',
+        issuer: '-',
+        clientId: '-',
+        resource: '-',
+        accessToken: '********',
+        refreshToken: '-',
+      },
+    },
+  });
+});
+
 test('ps explains when the requested env does not exist', async () => {
   const { default: Ps } = await import('../commands/app/ps.js');
   mocks.resolveManagedAppRuntime.mockResolvedValue(undefined);
