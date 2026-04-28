@@ -98,6 +98,30 @@ describe('startup update prompt', () => {
     expect(await shouldRunStartupUpdateCheck(['env', 'list'])).toBe(true);
   });
 
+  test('uses the local calendar date for once-per-day checks', async () => {
+    const { shouldRunStartupUpdateCheck } = await import('../lib/startup-update.js');
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const originalTimezone = process.env.TZ;
+
+    process.env.TZ = 'Asia/Shanghai';
+    await fs.mkdir(path.join(process.env.NB_CLI_ROOT!, '.nocobase'), { recursive: true });
+    await fs.writeFile(
+      path.join(process.env.NB_CLI_ROOT!, '.nocobase', 'startup-update.json'),
+      JSON.stringify({ lastCheckedDate: '2026-04-28' }),
+    );
+
+    try {
+      expect(await shouldRunStartupUpdateCheck(['env', 'list'], new Date('2026-04-28T23:04:49.000Z'))).toBe(true);
+    } finally {
+      if (originalTimezone === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = originalTimezone;
+      }
+    }
+  });
+
   test('updates CLI and skills when user accepts', async () => {
     const { maybeRunStartupUpdatePrompt, shouldRunStartupUpdateCheck } = await import('../lib/startup-update.js');
     mocks.inspectSelfStatus.mockResolvedValue({
