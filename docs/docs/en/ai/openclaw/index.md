@@ -78,7 +78,7 @@ When installing third-party Skills, pay attention to security — prioritize off
 Copy the prompt below to OpenClaw, and it will automatically complete NocoBase CLI installation, initialization, and environment configuration:
 
 ```
-Help me install NocoBase CLI and complete initialization: https://docs.nocobase.com/en/ai/ai-quick-start.md (please read the linked content directly)
+Help me install NocoBase CLI and complete initialization: https://docs.nocobase.com/ai/ai-quick-start.md (please read the linked content directly)
 ```
 
 ### Manual Installation

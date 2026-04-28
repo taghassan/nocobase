@@ -56,10 +56,16 @@ function createCdnClient() {
  * @param {string} domain
  * @param {string} timestampDir
  */
+const REWRITE_RULES = [
+  { sourceUrl: '/en/(.*)', targetTemplate: (ts) => `/${ts}/$1`, flag: 'break' },
+  { sourceUrl: '/(.*)', targetTemplate: (ts) => `/${ts}/$1`, flag: 'break' },
+];
+
 async function updateCdnOriginRewrite(cdnClient, domain, timestampDir) {
   const Cdn20180510 = require('@alicloud/cdn20180510');
 
-  let existingConfigId;
+  // Fetch existing configs to find configIds
+  const existingConfigMap = {};
   try {
     const describeRequest = new Cdn20180510.DescribeCdnDomainConfigsRequest({
       domainName: domain,
@@ -68,28 +74,37 @@ async function updateCdnOriginRewrite(cdnClient, domain, timestampDir) {
     const describeResponse = await cdnClient.describeCdnDomainConfigs(describeRequest);
     const configs = describeResponse.body?.domainConfigs?.domainConfig;
     if (configs && configs.length > 0) {
-      existingConfigId = configs[0].configId;
+      for (const config of configs) {
+        const args = config.functionArgs?.functionArg || [];
+        const sourceArg = args.find((a) => a.argName === 'source_url');
+        if (sourceArg) {
+          existingConfigMap[sourceArg.argValue] = config.configId;
+        }
+      }
     }
   } catch (error) {
     console.log(chalk.yellow(`Could not fetch existing CDN config (may be first deployment): ${error.message}`));
   }
 
-  const functionConfig = {
-    functionName: 'back_to_origin_url_rewrite',
-    functionArgs: [
-      { argName: 'source_url', argValue: '/(.*)' },
-      { argName: 'target_url', argValue: `/${timestampDir}/$1` },
-      { argName: 'flag', argValue: 'break' },
-    ],
-  };
-
-  if (existingConfigId) {
-    functionConfig.configId = existingConfigId;
-  }
+  // Build function configs for all rules
+  const functions = REWRITE_RULES.map((rule) => {
+    const functionConfig = {
+      functionName: 'back_to_origin_url_rewrite',
+      functionArgs: [
+        { argName: 'source_url', argValue: rule.sourceUrl },
+        { argName: 'target_url', argValue: rule.targetTemplate(timestampDir) },
+        { argName: 'flag', argValue: rule.flag },
+      ],
+    };
+    if (existingConfigMap[rule.sourceUrl]) {
+      functionConfig.configId = existingConfigMap[rule.sourceUrl];
+    }
+    return functionConfig;
+  });
 
   const setRequest = new Cdn20180510.BatchSetCdnDomainConfigRequest({
     domainNames: domain,
-    functions: JSON.stringify([functionConfig]),
+    functions: JSON.stringify(functions),
   });
 
   await cdnClient.batchSetCdnDomainConfig(setRequest);
@@ -103,8 +118,8 @@ async function updateCdnOriginRewrite(cdnClient, domain, timestampDir) {
  */
 async function waitForRewriteRule(cdnClient, domain, timestampDir) {
   const Cdn20180510 = require('@alicloud/cdn20180510');
-  const maxAttempts = 24; // 24 * 5s = 120s max
-  const interval = 5000;
+  const maxAttempts = 180; // 180 * 10s = 30min max
+  const interval = 10000;
 
   for (let i = 1; i <= maxAttempts; i++) {
     try {
@@ -116,22 +131,24 @@ async function waitForRewriteRule(cdnClient, domain, timestampDir) {
       const configs = response.body?.domainConfigs?.domainConfig;
 
       if (configs && configs.length > 0) {
-        const config = configs[0];
-        const status = config.status;
-        const args = config.functionArgs?.functionArg || [];
-        const targetArg = args.find((a) => a.argName === 'target_url');
-        const targetValue = targetArg?.argValue || '';
         const expectedPrefix = `/${timestampDir}/`;
+        const allEffective = REWRITE_RULES.every((rule) => {
+          const config = configs.find((c) => {
+            const cArgs = c.functionArgs?.functionArg || [];
+            const src = cArgs.find((a) => a.argName === 'source_url');
+            return src && src.argValue === rule.sourceUrl;
+          });
+          if (!config) return false;
+          const args = config.functionArgs?.functionArg || [];
+          const targetArg = args.find((a) => a.argName === 'target_url');
+          return config.status === 'success' && (targetArg?.argValue || '').startsWith(expectedPrefix);
+        });
 
-        if (status === 'success' && targetValue.startsWith(expectedPrefix)) {
-          console.log(chalk.green(`Rewrite rule is effective (attempt ${i}/${maxAttempts})`));
+        if (allEffective) {
+          console.log(chalk.green(`All rewrite rules are effective (attempt ${i}/${maxAttempts})`));
           return;
         }
-        console.log(
-          chalk.blue(
-            `Rewrite rule status: ${status}, target: ${targetValue}, waiting... (attempt ${i}/${maxAttempts})`,
-          ),
-        );
+        console.log(chalk.blue(`Rewrite rules not all effective yet, waiting... (attempt ${i}/${maxAttempts})`));
       }
     } catch (error) {
       console.log(chalk.blue(`Failed to query rule status, retrying... (attempt ${i}/${maxAttempts})`));
@@ -139,7 +156,7 @@ async function waitForRewriteRule(cdnClient, domain, timestampDir) {
     await new Promise((resolve) => setTimeout(resolve, interval));
   }
 
-  console.warn(chalk.yellow('Rewrite rule verification timed out after 120s, proceeding with cache refresh anyway'));
+  console.warn(chalk.yellow('Rewrite rule verification timed out after 30min, proceeding with cache refresh anyway'));
 }
 
 /**
