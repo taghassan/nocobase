@@ -44,8 +44,7 @@
         "label": "nb app upgrade",
         "link": "/api/cli/app/upgrade"
       }
-    ],
-    "collapsed": false
+    ]
   },
   {
     "type": "custom-link",
