@@ -60,12 +60,16 @@ nb init --ui
 When creating a new app, it can also install NocoBase AI coding skills
 (`nocobase/skills`) globally.
 
+Use `--skip-skills` if the skills are managed separately, or when running in CI
+or offline environments where `nb init` should not install or update them.
+
 ### Non-Interactive Setup
 
 When prompts are skipped, an app/env name is required:
 
 ```bash
 nb init --env app1 --yes
+nb init --env app1 --yes --skip-skills
 ```
 
 Install with Docker:
@@ -111,6 +115,7 @@ If `nb init` was interrupted after the env config had already been saved, you ca
 
 ```bash
 nb init --env app1 --resume
+nb init --env app1 --resume --skip-skills
 ```
 
 `--resume` reuses the saved workspace env config for app, source, database, and env connection settings. In interactive mode, it only asks for any missing setup-only values.

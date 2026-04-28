@@ -55,12 +55,15 @@ nb init --ui
 
 `nb init` 可以连接已有的 NocoBase 应用，也可以安装一个新的 NocoBase 应用。创建新应用时，还可以全局安装 NocoBase AI coding skills (`nocobase/skills`)。
 
+如果已经自行管理 skills，或在 CI、离线环境中运行，不希望 `nb init` 安装或更新 skills，可以传入 `--skip-skills`。
+
 ### 非交互式初始化
 
 跳过交互提示时，必须提供 app/env name：
 
 ```bash
 nb init --env app1 --yes
+nb init --env app1 --yes --skip-skills
 ```
 
 使用 Docker 安装：
@@ -106,6 +109,7 @@ nb init --env app1 --yes --source git --version fix/cli-v2
 
 ```bash
 nb init --env app1 --resume
+nb init --env app1 --resume --skip-skills
 ```
 
 `--resume` 会复用工作区里已保存的 env config，包括应用、source、数据库和 env 连接相关配置。在交互模式下，只会继续补齐缺失的初始化参数。

@@ -22,6 +22,8 @@ nb init [flags]
 - `--ui`：打开本地浏览器表单完成引导流程。
 - `--yes`：跳过提示并使用默认值。此模式必须传入 `--env <envName>`，并会创建新的本地应用。
 
+默认情况下，`nb init` 会在初始化或恢复初始化时安装或更新 NocoBase AI coding skills。已经自行管理 skills，或在 CI、离线环境中运行时，可以使用 `--skip-skills` 跳过这一步。
+
 如果初始化在 env 配置保存后中断，可以使用 `--resume` 继续：
 
 ```bash
@@ -36,6 +38,7 @@ nb init --env app1 --resume
 | `--env`, `-e` | string | 本次初始化的 env 名称，`--yes` 和 `--resume` 模式必填 |
 | `--ui` | boolean | 打开浏览器可视化向导，不能和 `--yes` 同时使用 |
 | `--verbose` | boolean | 显示详细命令输出 |
+| `--skip-skills` | boolean | 跳过初始化过程中安装或更新 NocoBase AI coding skills |
 | `--ui-host` | string | `--ui` 本地服务绑定地址，默认 `127.0.0.1` |
 | `--ui-port` | integer | `--ui` 本地服务端口，`0` 表示自动分配 |
 | `--locale` | string | CLI 提示和 UI 语言：`en-US` 或 `zh-CN` |
@@ -80,7 +83,9 @@ nb init --env app1 --resume
 nb init
 nb init --ui
 nb init --env app1 --yes
+nb init --env app1 --yes --skip-skills
 nb init --env app1 --resume
+nb init --env app1 --resume --skip-skills
 nb init --env app1 --yes --source docker --version alpha
 nb init --env app1 --yes --source npm --version alpha --app-port 13080
 nb init --env app1 --yes --source git --version fix/cli-v2

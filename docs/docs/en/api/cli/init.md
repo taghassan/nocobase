@@ -22,6 +22,8 @@ nb init [flags]
 - `--ui`: open a local browser form for the setup wizard.
 - `--yes`: skip prompts and use flags plus defaults. This mode requires `--env <envName>` and creates a new local app.
 
+By default, `nb init` installs or updates NocoBase AI coding skills during initialization or resume. Use `--skip-skills` to skip this step when skills are managed separately, or when running in CI or offline environments.
+
 If initialization is interrupted after env configuration has been saved, resume it with:
 
 ```bash
@@ -36,6 +38,7 @@ nb init --env app1 --resume
 | `--env`, `-e` | string | Env name for this setup; required with `--yes` and `--resume` |
 | `--ui` | boolean | Open the browser-based setup wizard; cannot be used with `--yes` |
 | `--verbose` | boolean | Show verbose command output |
+| `--skip-skills` | boolean | Skip installing or updating NocoBase AI coding skills during init |
 | `--ui-host` | string | Local service bind address for `--ui`, default `127.0.0.1` |
 | `--ui-port` | integer | Local service port for `--ui`; `0` means auto-assign |
 | `--locale` | string | CLI prompt and UI language: `en-US` or `zh-CN` |
@@ -80,7 +83,9 @@ nb init --env app1 --resume
 nb init
 nb init --ui
 nb init --env app1 --yes
+nb init --env app1 --yes --skip-skills
 nb init --env app1 --resume
+nb init --env app1 --resume --skip-skills
 nb init --env app1 --yes --source docker --version alpha
 nb init --env app1 --yes --source npm --version alpha --app-port 13080
 nb init --env app1 --yes --source git --version fix/cli-v2
