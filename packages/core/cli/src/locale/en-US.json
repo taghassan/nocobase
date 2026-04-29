@@ -62,6 +62,13 @@
       "allocateNotDockerPublished": "Failed to allocate an available TCP port that is not already published by Docker.",
       "alreadyInUse": "Port {{port}} is already in use. Choose another port.",
       "alreadyInUseByDocker": "Port {{port}} is already in use by a Docker container. Choose another port."
+    },
+    "dbConnection": {
+      "unreachable": "Can't reach the database at {{host}}:{{port}}. Check the host, port, and network connectivity. Details: {{details}}",
+      "timeout": "Timed out connecting to the database at {{host}}:{{port}} after about {{seconds}} seconds.",
+      "authenticationFailed": "Failed to sign in to database \"{{database}}\" with user \"{{user}}\". Check the username and password.",
+      "databaseNotFound": "Database \"{{database}}\" does not exist or is not accessible with the current connection settings.",
+      "connectionFailed": "Database connection check failed. Details: {{details}}"
     }
   },
   "commands": {
