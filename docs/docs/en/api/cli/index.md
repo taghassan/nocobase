@@ -1,145 +1,153 @@
 ---
 title: "NocoBase CLI"
-description: "NocoBase CLI (nb command) reference overview: initialization, environment management, app runtime, source, database, plugins, API, CLI self updates, and Skills management."
+description: "NocoBase CLI (nb command) reference: initialization, environment management, app runtime, source, database, plugins, API, CLI self updates, and Skills management."
 keywords: "NocoBase CLI,nb,command line,command reference,environment management,plugin management,API"
 ---
 
 # NocoBase CLI
 
-NocoBase CLI (`nb`) is used to initialize, connect to, and manage NocoBase applications in a local workspace. It saves CLI env configuration, manages local apps, Docker containers, built-in databases, source directories, and storage directories, and lets coding agents connect to NocoBase through a unified command interface.
+## Description
 
-The CLI supports two common setup paths:
+NocoBase CLI (`nb`) is the command-line entry point for initializing, connecting to, and managing NocoBase apps in a local workspace.
 
-- Connect an existing NocoBase app so coding agents can use it directly.
-- Install a new NocoBase app from Docker, npm, or Git, then save it as a CLI env.
+It supports two common setup paths:
 
-## Prerequisites
+- Connect an existing NocoBase app and save it as a CLI env
+- Install a new NocoBase app from Docker, npm, or Git, then save it as a CLI env
 
-- Node.js v20+
-- Yarn 1.x
-- Git: required when installing from Git source
-- Docker: required when installing with Docker or using the built-in database
+When creating a new local app, [`nb init`](./init.md) can also install or update NocoBase AI coding skills. Use `--skip-skills` when you want to skip that step.
 
-## Installation
+## Usage
 
 ```bash
-npm install -g @nocobase/cli@alpha
+nb [command]
 ```
 
-View available commands:
+The root command mainly displays help and dispatches execution to command groups or standalone commands.
+
+## Topics
+
+`nb --help` shows the following topics:
+
+| Topic | Description |
+| --- | --- |
+| [`nb api`](./api/) | Work with NocoBase API. |
+| [`nb app`](./app/) | Manage NocoBase app runtimes: start, stop, restart, logs, and upgrades. |
+| [`nb db`](./db/) | Manage the built-in database for the selected env. |
+| [`nb env`](./env/) | Manage NocoBase project environments, status, details, and command runtimes. |
+| [`nb plugin`](./plugin/) | Manage plugins in the selected NocoBase env. |
+| [`nb scaffold`](./scaffold/) | Generate NocoBase plugin development scaffolds. |
+| [`nb self`](./self/) | Inspect or update the NocoBase CLI itself. |
+| [`nb skills`](./skills/) | Inspect or synchronize NocoBase AI coding skills for the current workspace. |
+| [`nb source`](./source/) | Work with the local NocoBase source project: download, develop, build, and test. |
+
+## Commands
+
+Standalone commands exposed directly by the root command:
+
+| Command | Description |
+| --- | --- |
+| [`nb init`](./init.md) | Set up NocoBase so coding agents can connect and work with it. |
+
+## Display help text
+
+Show help for the root command:
 
 ```bash
 nb --help
-nb init --help
 ```
 
-All commands support `nb <command> --help` for parameter details. For the full installation flow, see [Quick Start](../../ai/quick-start.mdx).
+Show help for a command or command group:
 
-## Core Concepts
+```bash
+nb init --help
+nb app --help
+nb api resource --help
+```
 
-| Concept | Description |
-| --- | --- |
-| Workspace | The current project folder where the CLI saves `.nocobase` configuration |
-| Env | A named NocoBase connection saved by the CLI. In `nb init`, the app name is also the env name |
-| Source | How the local app is obtained: `docker`, `npm`, or `git` |
-| Remote env | An env that only stores an API connection to an existing NocoBase app |
-| Runtime resources | Local app process, Docker app container, built-in database container, source directory, and storage directory managed by CLI commands |
+## Examples
 
-## Quick Start
+Interactive setup:
 
-Use the browser-based setup form:
+```bash
+nb init
+```
+
+Browser-based setup:
 
 ```bash
 nb init --ui
 ```
 
-Install with Docker in non-interactive mode:
+Create a Docker-based app non-interactively:
 
 ```bash
 nb init --env app1 --yes --source docker --version alpha
 ```
 
-Install from npm:
-
-```bash
-nb init --env app1 --yes --source npm --version alpha --app-port 13080
-```
-
-Install from Git source:
-
-```bash
-nb init --env app1 --yes --source git --version alpha
-```
-
-Connect an existing NocoBase app:
+Connect an existing app:
 
 ```bash
 nb env add app1 --api-base-url http://localhost:13000/api
 ```
 
-Start, stop, and view logs:
+Start the app and refresh runtime commands:
 
 ```bash
-nb app start --env app1
-nb app stop --env app1
-nb app restart --env app1
-nb app logs --env app1
+nb app start -e app1
+nb env update app1
 ```
 
-## Commands
+Call an API:
 
-| Command | Description |
+```bash
+nb api resource list --resource users -e app1
+```
+
+## Environment variables
+
+The following environment variables affect CLI behavior:
+
+| Variable | Description |
 | --- | --- |
-| [`nb init`](./init.md) | Set up NocoBase and connect it as a CLI env |
-| [`nb app`](./app/) | Manage app runtimes: start, stop, restart, logs, cleanup, and upgrades |
-| [`nb source`](./source/) | Manage the local source project: download, develop, build, and test |
-| [`nb db`](./db/) | Inspect or manage built-in database runtime status |
-| [`nb env`](./env/) | Manage saved CLI env connections |
-| [`nb api`](./api/) | Call NocoBase APIs from the CLI |
-| [`nb plugin`](./plugin/) | Manage plugins for the selected NocoBase env |
-| [`nb self`](./self/) | Check or update the installed NocoBase CLI |
-| [`nb skills`](./skills/) | Check, install, update, or remove NocoBase AI coding skills |
-| [`nb scaffold`](./scaffold/) | Generate plugin and migration scaffolds |
+| `NB_CLI_ROOT` | Root directory where the CLI stores `.nocobase` config and local app files. Defaults to the current user's home directory. |
+| `NB_LOCALE` | Language for CLI prompts and the local setup UI. Supported values are `en-US` and `zh-CN`. |
 
-## Configuration Files
+Example:
 
-NocoBase CLI uses the global config directory by default:
+```bash
+export NB_CLI_ROOT=/your/workspace
+export NB_LOCALE=en-US
+```
+
+## Configuration files
+
+Default config file:
 
 ```text
 ~/.nocobase/config.json
 ```
 
-Use `NB_CLI_ROOT` to change the root directory for configuration and local app files:
+After setting `NB_CLI_ROOT=/your/workspace`, the config file path becomes:
 
-```bash
-export NB_CLI_ROOT=/your/workspace
+```text
+/your/workspace/.nocobase/config.json
 ```
 
-After setting it, the config file is saved to `/your/workspace/.nocobase/config.json`. When `NB_CLI_ROOT` is not set, the CLI also keeps compatibility with the legacy project config under the current working directory.
+The CLI also keeps compatibility with legacy project config under the current working directory.
 
-Example config file:
+Runtime command cache is stored in:
 
-```json
-{
-  "currentEnv": "local",
-  "envs": {
-    "local": {
-      "apiBaseUrl": "http://localhost:13000/api",
-      "auth": { "type": "token", "accessToken": "..." },
-      "appRootPath": "./local/source",
-      "storagePath": "./local/storage",
-      "appPort": "13000",
-      "dbDialect": "postgres"
-    }
-  }
-}
+```text
+.nocobase/versions/<hash>/commands.json
 ```
 
-Runtime command cache is stored in `.nocobase/versions/<hash>/commands.json` and generated or refreshed by [`nb env update`](./env/update.md).
+This file is generated or refreshed by [`nb env update`](./env/update.md) and caches runtime commands synchronized from the target app.
 
-## Related Links
+## Related links
 
 - [Quick Start](../../ai/quick-start.mdx)
+- [Install, Upgrade, and Migration](../../ai/install-upgrade-migration.mdx)
 - [Environment Variables](../app/env.md)
 - [AI Builder](../../ai-builder/index.md)
 - [Plugin Development](../../plugin-development/index.md)

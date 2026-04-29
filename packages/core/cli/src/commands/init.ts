@@ -373,7 +373,6 @@ Prompt modes:
     }),
     'skip-skills': Flags.boolean({
       description: 'Skip installing or updating NocoBase AI coding skills during init',
-      hidden: true,
       default: false,
     }),
     'ui-host': Flags.string({

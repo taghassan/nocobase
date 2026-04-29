@@ -13,6 +13,7 @@
     "type": "custom-link",
     "label": "nb app",
     "link": "/api/cli/app",
+    "collapsed": true,
     "items": [
       {
         "type": "custom-link",
@@ -44,8 +45,7 @@
         "label": "nb app upgrade",
         "link": "/api/cli/app/upgrade"
       }
-    ],
-    "collapsed": false
+    ]
   },
   {
     "type": "custom-link",
